@@ -360,7 +360,6 @@ impl<H> Form<H> {
     }
 
     /// The declared struct, or why it was refused with every handle the caller gave. `error` is the fatal error parsing ended with, if any.
-    // SECURITY: An upload whose content was still arriving when parsing failed, or that ended without the caller giving its handle, has no handle here, so it cannot be returned. This does not leak storage: the caller began storing it at `ContentEvent::Upload` and still holds that storage, since it never gave the parser a handle for it, and `ContentParser`'s documentation and the guide tell it to remove what it stored of an upload still arriving.
     pub(crate) fn finish<T: Item<H>>(
         self,
         error: Option<ContentError>,
@@ -493,7 +492,7 @@ fn accepts(accept: &[&'static str], media_type: Option<&MediaType>) -> bool {
     let Some(media_type) = media_type else {
         return false;
     };
-    // SECURITY: `MediaRange::from_static` panics on a range that is not lowercase tokens, which would let any upload for the field panic the parser. It cannot here: the derive reads each range with `MediaRange::parse` from the same `base-web-media-type` and declares its lowercase essence, without parameters, which `from_static` accepts, and declarations are only written by the derive, as design/scope.md requires.
+    // SECURITY: `MediaRange::from_static` panics on a range that is not lowercase tokens, which would let any upload for the field panic the parser. It cannot here: the derive reads each range with `MediaRange::parse` from `base-web-media-type` 0.1, which Cargo resolves to the same version for both crates, and declares its lowercase essence, without parameters, which `from_static` accepts. Declarations are trusted application code, written by the derive, as design/scope.md requires; one written by hand through the hidden `__private` module is outside that boundary.
     let accept: MediaRangeSet = accept
         .iter()
         .map(|range| MediaRange::from_static(range))
