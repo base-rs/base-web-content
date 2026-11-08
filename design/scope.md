@@ -4,7 +4,7 @@
 
 `base-web-content` must parse the content of web requests into structures an application declares in advance, with a limit on everything it accepts, so that a server never parses a body without knowing its limits. Parsing must be strict and proactive: whatever the declaration does not accept is refused as early as the bytes allow, rather than read and checked afterwards.
 
-The crate must do no I/O. It must be fed bytes, as `base-web-multipart`'s `MultipartParser` is, and must not depend on an async runtime or perform file, network, or clock operations. Reading a request body, the early `Content-Length` check, and saving uploads to files belong to the server layer, `base-http-server` or wherever request handling lives, not here.
+The crate must do no I/O. It must be fed bytes, as `base-web-multipart`'s `MultipartParser` is, and must not depend on an async runtime or perform file, network, or clock operations. Reading a request body, the early `Content-Length` check, and saving uploads to files belong to the server layer, not here: they are in `base-http-content`, a package of the `base-http` workspace.
 
 The crate must parse exactly these formats, chosen by the request's media type:
 
@@ -21,7 +21,7 @@ These decisions were made with the user on 2026-11-08, drawing on the Ruby gem `
 
 The gem dispatches on media type through a registry that applications extend (`lib/protocol/content/parser.rb`, `Parser#register`), with JSON, URL-encoded, and multipart parsers registered by default (`lib/protocol/content/default.rb`). The user chose a fixed list for 0.1: opening it to extension is future work, likely after JSON, and JSON will come later as an incremental, streaming parser of this project's own with a way to represent file uploads, rather than buffering a document as the gem's `lib/protocol/content/json_parser.rb` does. The URL-encoded parser belongs in `base-web-url`, as the gem uses `protocol-url`'s `lib/protocol/url/form_data/parser.rb`; writing it is a separate step from this crate.
 
-`base-web-multipart`'s `design/scope.md` leaves form fields, uploads, and content limits to this crate. The user decided that the derive's runtime model stays internal for now; it may become public later if applications need forms whose fields are only known at run time, which the gem's builder (`lib/protocol/content/parameters/builder.rb`) allows. Saving uploads safely and adapting async request bodies were placed in the server layer so that this crate stays sans-I/O.
+`base-web-multipart`'s `design/scope.md` leaves form fields, uploads, and content limits to this crate. The user decided that the derive's runtime model stays internal for now; it may become public later if applications need forms whose fields are only known at run time, which the gem's builder (`lib/protocol/content/parameters/builder.rb`) allows. Saving uploads safely and adapting async request bodies were placed in the server layer so that this crate stays sans-I/O. On 2026-11-09, under the user's delegation of that design, they were implemented in `base-http-content`, a separate package of the `base-http` workspace rather than a feature of `base-http-server`, so that handlers need only `base-http`'s requests and bodies; its `design/content.md` records the requirements.
 
 ## Scope
 

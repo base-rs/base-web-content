@@ -55,6 +55,7 @@ See [releases.md](releases.md).
 - [`base-web-multipart`](https://github.com/base-rs/base-web-multipart), which frames the multipart bodies of forms.
 - [`base-web-url`](https://github.com/base-rs/base-web-url), which reads URL-encoded forms and the bracket paths of field names.
 - [`base-web-media-type`](https://github.com/base-rs/base-web-media-type), which reads the media types that choose a format and that uploads accept.
+- [`base-http-content`](https://github.com/base-rs/base-http/tree/main/crates/content), which reads `base-http` requests with this crate and saves uploads to files safely.
 
 ## Contributing
 
