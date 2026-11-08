@@ -1,5 +1,5 @@
 error[E0080]: evaluation panicked: `count_limit` on `tags` must be at least 1
- --> tests/ui/zero_count_limit.rs:5:15
+ --> tests/ui/zero_count_limit.rs:8:15
   |
-5 |     #[content(count_limit = 0)]
+8 |     #[content(count_limit = 0)]
   |               ^^^^^^^^^^^ evaluation of `_::_` failed here

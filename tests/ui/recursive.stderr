@@ -1,5 +1,5 @@
 error: a declaration cannot contain itself, since its names would have no depth limit
- --> tests/ui/recursive.rs:6:19
+ --> tests/ui/recursive.rs:9:19
   |
-6 |     children: Vec<Node>,
+9 |     children: Vec<Node>,
   |                   ^^^^

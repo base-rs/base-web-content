@@ -1,5 +1,5 @@
 error: `count_limit` applies to an array, a `Vec` field
- --> tests/ui/count_limit_on_scalar.rs:5:15
+ --> tests/ui/count_limit_on_scalar.rs:8:15
   |
-5 |     #[content(count_limit = 4)]
+8 |     #[content(count_limit = 4)]
   |               ^^^^^^^^^^^
