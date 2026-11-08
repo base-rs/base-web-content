@@ -1,0 +1,5 @@
+error: a field is optional once: `Option` cannot contain another `Option`
+ --> tests/ui/nested_option.rs:5:22
+  |
+5 |     nickname: Option<Option<String>>,
+  |                      ^^^^^^^^^^^^^^

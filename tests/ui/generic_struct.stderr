@@ -1,0 +1,5 @@
+error: Content cannot be derived for a generic struct
+ --> tests/ui/generic_struct.rs:4:15
+  |
+4 | struct Wrapper<T> {
+  |               ^^^

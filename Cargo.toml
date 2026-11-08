@@ -12,10 +12,15 @@ categories = ["web-programming", "parser-implementations"]
 include = ["src/**", "context/**", "Cargo.toml", "readme.md", "license.md", "releases.md"]
 
 [workspace]
-members = ["bake"]
+members = ["macros", "bake"]
 resolver = "3"
 
 [workspace.metadata.bake.release]
 reviewers = ["base-rs/maintainers"]
 
 [dependencies]
+base-web-content-macros = { version = "=0.1.0", path = "macros" }
+base-web-media-type = "0.1"
+
+[dev-dependencies]
+trybuild = "1"

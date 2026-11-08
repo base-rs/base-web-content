@@ -1,0 +1,21 @@
+[package]
+name = "base-web-content-macros"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.87"
+license = "MIT"
+description = "The derive macros for base-web-content declarations"
+repository = "https://github.com/base-rs/base-web-content"
+readme = "readme.md"
+keywords = ["form-data", "derive", "upload", "web"]
+categories = ["web-programming"]
+include = ["src/**", "Cargo.toml", "readme.md", "license.md"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+base-web-media-type = "0.1"
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }

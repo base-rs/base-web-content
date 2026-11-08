@@ -1,0 +1,5 @@
+error: unknown `content` attribute; expected `rename`, `size_limit`, `count_limit`, or `accept`
+ --> tests/ui/unknown_attribute.rs:5:15
+  |
+5 |     #[content(maximum = 10)]
+  |               ^^^^^^^

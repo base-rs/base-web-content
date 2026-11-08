@@ -1,0 +1,5 @@
+error: FieldValue can only be derived for an enumeration of unit variants
+ --> tests/ui/variant_with_fields.rs:5:11
+  |
+5 |     Circle(f64),
+  |           ^^^^^

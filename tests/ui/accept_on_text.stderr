@@ -1,0 +1,5 @@
+error[E0080]: evaluation panicked: `accept` on `biography` applies to an upload
+ --> tests/ui/accept_on_text.rs:5:15
+  |
+5 |     #[content(accept("text/plain"))]
+  |               ^^^^^^ evaluation of `_::_` failed here

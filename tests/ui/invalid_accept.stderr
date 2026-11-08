@@ -1,0 +1,5 @@
+error: `accept` needs media ranges, such as `image/png` or `image/*`
+ --> tests/ui/invalid_accept.rs:5:22
+  |
+5 |     #[content(accept("image"))]
+  |                      ^^^^^^^

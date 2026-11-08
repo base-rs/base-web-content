@@ -1,0 +1,5 @@
+error[E0080]: evaluation panicked: `size_limit` on `address` applies to a scalar or an upload, not a nested group
+  --> tests/ui/size_limit_on_group.rs:10:15
+   |
+10 |     #[content(size_limit = 100)]
+   |               ^^^^^^^^^^ evaluation of `_::_` failed here

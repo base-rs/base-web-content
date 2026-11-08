@@ -1,0 +1,39 @@
+error[E0277]: `IpAddr` cannot be a field of a `Content` declaration
+ --> tests/ui/unsupported_type.rs:5:14
+  |
+5 |     address: std::net::IpAddr,
+  |              ^^^ not a field type
+  |
+  = help: the trait `FieldValue` is not implemented for `IpAddr`
+  = note: a field is `String`, `Vec<u8>`, an integer, `f32`, `f64`, `bool`, a `FieldValue`, an `Upload`, or a struct deriving `Content`, in `Option` when it may be omitted, or `Vec` for an array
+  = help: the following other types implement trait `FieldValue`:
+            String
+            bool
+            f32
+            f64
+            i128
+            i16
+            i32
+            i64
+          and $N others
+  = note: required for `IpAddr` to implement `base_web_content::__private::ItemDeclaration`
+
+error[E0277]: `IpAddr` cannot be a field of a `Content` declaration
+ --> tests/ui/unsupported_type.rs:5:14
+  |
+5 |     address: std::net::IpAddr,
+  |              ^^^^^^^^^^^^^^^^ not a field type
+  |
+  = help: the trait `FieldValue` is not implemented for `IpAddr`
+  = note: a field is `String`, `Vec<u8>`, an integer, `f32`, `f64`, `bool`, a `FieldValue`, an `Upload`, or a struct deriving `Content`, in `Option` when it may be omitted, or `Vec` for an array
+  = help: the following other types implement trait `FieldValue`:
+            String
+            bool
+            f32
+            f64
+            i128
+            i16
+            i32
+            i64
+          and $N others
+  = note: required for `IpAddr` to implement `base_web_content::__private::ItemDeclaration`

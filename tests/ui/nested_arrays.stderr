@@ -1,0 +1,5 @@
+error: an array's elements cannot be arrays
+ --> tests/ui/nested_arrays.rs:5:15
+  |
+5 |     rows: Vec<Vec<i32>>,
+  |               ^^^^^^^^

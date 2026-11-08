@@ -1,0 +1,5 @@
+error: an array's elements cannot be optional
+ --> tests/ui/optional_elements.rs:5:15
+  |
+5 |     tags: Vec<Option<String>>,
+  |               ^^^^^^^^^^^^^^
