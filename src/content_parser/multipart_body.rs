@@ -23,10 +23,6 @@ pub(super) struct MultipartBody {
     epilogue: Option<usize>,
     /// Whether the current part is an upload whose content is reported to the caller.
     upload: bool,
-    /// Whether the parser has reported a part or the end, so the preamble is over.
-    started: bool,
-    /// Whether a part's header section was reported and none of its content yet, so the parser's next call begins with the line break that ends the section.
-    body_start: bool,
 }
 
 impl MultipartBody {
@@ -48,8 +44,6 @@ impl MultipartBody {
             epilogue_size_limit: limits.epilogue_size_limit,
             epilogue: None,
             upload: false,
-            started: false,
-            body_start: false,
         })
     }
 
@@ -83,18 +77,8 @@ impl MultipartBody {
                 *epilogue += rest.len();
                 return Ok(Stepped::new(input.len(), ContentEvent::End));
             }
-            // While the preamble may still be read, the parser's state is kept, so that an error it reports can be read again as a split body would be.
-            let before = (!self.started).then(|| self.parser.clone());
-            let parsed = match self.parser.parse(rest) {
-                Ok(parsed) => parsed,
-                Err(error) => return self.refuse(form, input, offset, consumed, error, before),
-            };
+            let parsed = self.parser.parse(rest).map_err(|error| self.error(error))?;
             consumed += parsed.consumed;
-            self.started |= matches!(parsed.event, MultipartEvent::Part(_) | MultipartEvent::End);
-            // The line break is consumed with the first content, or not at all while the parser waits to see whether the part is empty.
-            if parsed.consumed > 0 || parsed.event != MultipartEvent::Incomplete {
-                self.body_start = matches!(parsed.event, MultipartEvent::Part(_));
-            }
             match parsed.event {
                 MultipartEvent::Part(head) => {
                     let start = consumed - head.as_bytes().len();
@@ -203,56 +187,11 @@ impl MultipartBody {
         self.parser.finish().map_err(|error| self.error(error))
     }
 
-    /// Refuse the body with an error `base-web-multipart` reported at a call whose input began at `consumed` in `input`, itself at `offset` in the body.
-    ///
-    /// `base-web-multipart` reports a boundary after a bare CR or LF without first reporting the content or preamble before it, which a body split before the break would report first, and whose limits it could exceed. So that the result does not depend on how the body is split, that content is read first, as the split body's would be.
-    fn refuse<'a, H>(
-        &self,
-        form: &mut Form<H>,
-        input: &'a [u8],
-        offset: usize,
-        consumed: usize,
-        error: MultipartError,
-        before: Option<MultipartParser>,
-    ) -> Result<Stepped<'a>, ContentError> {
-        let error = self.error(error);
-        if error.kind() != ContentErrorKind::MalformedMultipart {
-            return Err(error);
-        }
-        // The break is in this call's input, after what it consumed.
-        let position = error.offset() as usize - offset;
-        // The content begins after the line break that ends the part's header section, if the call began with it.
-        let start = consumed + if self.body_start { 2 } else { 0 };
-        if position <= start {
-            return Err(error);
-        }
-        let preceding = &input[start..position];
-        if form.is_receiving() {
-            let (accepted, limit) = form.content(preceding);
-            let limit =
-                limit.map(|kind| ContentError::new(kind, (offset + start + accepted) as u64));
-            if self.upload && accepted > 0 {
-                return Ok(Stepped {
-                    consumed: start + accepted,
-                    event: ContentEvent::UploadContent(&preceding[..accepted]),
-                    deferred: Some(limit.unwrap_or(error)),
-                });
-            }
-            return Err(limit.unwrap_or(error));
-        }
-        // Before the first part, the bytes before the break may be preamble, over its limit. The break itself is given too, so that the parser counts a line break before it as preamble, as it does once the break arrives.
-        let through_break = &input[start..=position];
-        if let Some(Err(preamble)) = before.map(|mut parser| parser.parse(through_break)) {
-            return Err(self.error(preamble));
-        }
-        Err(error)
-    }
-
     /// A `base-web-multipart` error as this crate's.
     fn error(&self, error: MultipartError) -> ContentError {
         let error = from_multipart_error(error);
         match error.kind() {
-            // `base-web-multipart` reports the preamble limit at the start of the input it was given, which depends on how the body is split. The preamble begins the body, so the first byte over the limit is at the limit.
+            // `base-web-multipart` reports the preamble limit at the start of the preamble, which begins the body. This crate reports a size limit at the first byte beyond it, which for the preamble is at the limit.
             ContentErrorKind::PreambleSizeLimit => ContentError::new(
                 error.kind(),
                 self.parser.limits().preamble_size_limit as u64,

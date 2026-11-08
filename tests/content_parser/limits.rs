@@ -188,6 +188,35 @@ fn header_size_limit() {
     );
 }
 
+/// Transport padding after a boundary counts toward the header section limit, and padding over it is refused at the padding's start, however the body is split.
+#[test]
+fn padding_after_a_boundary() {
+    for dashes in ["", "--"] {
+        let padded = |length: usize| {
+            let mut body = field("a", "1");
+            body.extend_from_slice(
+                format!("--{BOUNDARY}{dashes}{}\r\n", " ".repeat(length)).as_bytes(),
+            );
+            if dashes.is_empty() {
+                body.extend_from_slice(
+                    b"Content-Disposition: form-data; name=\"b\"\r\n\r\n2\r\n--XyZ--\r\n",
+                );
+            }
+            body
+        };
+        // The padding and the header section after it are at most 64 bytes.
+        let within = if dashes.is_empty() { 64 - 42 } else { 64 };
+        assert_eq!(
+            accepted(&padded(within)).a.as_deref(),
+            Some("1"),
+            "`--XyZ{dashes}` with {within} bytes of padding"
+        );
+        let body = padded(65);
+        let start = field("a", "1").len() + 2 + BOUNDARY.len() + dashes.len();
+        refused(&body, ContentErrorKind::HeaderSizeLimit, start, start + 64);
+    }
+}
+
 #[test]
 fn header_count_limit() {
     let fields = |count: usize| {

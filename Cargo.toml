@@ -22,7 +22,7 @@ reviewers = ["base-rs/maintainers"]
 base-message = "0.1"
 base-web-content-macros = { version = "=0.1.0", path = "macros" }
 base-web-media-type = "0.1"
-base-web-multipart = "0.1"
+base-web-multipart = "0.1.1"
 base-web-url = "0.2"
 
 [dev-dependencies]
