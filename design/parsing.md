@@ -2,11 +2,11 @@
 
 ## Requirement
 
-The parser must be fed a body in pieces of any size, as `base-web-multipart`'s `MultipartParser` is, and must give the same result, events, violations, and errors however the body is split. It must choose the format from the request's media type essence, refusing an unsupported type, a missing one, a format the declaration does not accept, and a `multipart/form-data` type without a valid boundary before reading any content.
+The parser must be fed a body in pieces of any size, as `base-web-multipart`'s `MultipartParser` is, and must give the same result, events, violations, and errors however the body is split. Only the pieces an upload's content is reported in may differ: their concatenation must not. It must choose the format from the request's media type essence, refusing an unsupported type, a missing one, a format the declaration does not accept, and a `multipart/form-data` type without a valid boundary before reading any content.
 
 Parsing must be strict by default, and any leniency must be an explicit opt-in of the declaration:
 
-- A name the declaration does not accept, as `design/declarations.md` matches names, is fatal as soon as the name is complete, in a part's header section or before a URL-encoded `=` or `&`, before any of its content is read; a URL-encoded name is fatal as soon as it is longer than three times the longest name the declaration accepts, the most that percent-encoding could make it.
+- A name the declaration does not accept, as `design/declarations.md` matches names, is fatal as soon as the name is complete, in a part's header section or before a URL-encoded `=` or `&`, before any of its content is read; in a multipart body, a name, and the depth and count limits it reaches, are decided when the part's header section is complete, since the section is read and checked whole and a later field in it can still make the part invalid; a URL-encoded name is fatal as soon as it is longer than three times the longest name the declaration accepts, the most that percent-encoding could make it.
 - A multipart part whose `Content-Disposition` is missing, is not `form-data`, or has no `name` is fatal.
 - A field or upload that exceeds its size limit, or any other limit in `design/limits.md`, is fatal as soon as the bytes exceed it; parsing does not continue past it.
 
@@ -15,6 +15,8 @@ Text, bytes, and other scalar fields are buffered by the parser, within their li
 An upload's `accept` must be checked against the media type its part declares, before any content is reported; a part without a `Content-Type` does not match. The parser must not guess a media type from the filename. An upload that does not match, a multipart part with a `filename` for a field that is not an upload, and one without a `filename`, or a URL-encoded value, for an upload, are violations: their content is read and discarded, within the field's size limit, and not reported to the caller.
 
 A name submitted more than once for a scalar, an upload, or a nested group's field is not an error: the last value wins. When a later upload replaces an earlier one, the earlier handle must be returned to the caller as discarded. Repetitions count toward every running total in `design/limits.md`.
+
+URL-encoded content ends only where its input does, so the caller must tell the parser when the input has ended, as `base-web-url`'s `FormParser::parse_end` requires, and give it what remains; a parser told so never asks for more input, and content that is not complete then, such as a multipart body without its closing boundary, is refused. Finishing without having told the parser that the input ended refuses URL-encoded content as unfinished, since its last pair may be cut short. A URL-encoded pair is read with `base-web-url`'s `FormParser`: a value arrives decoded, so a limit within it is reported at the byte of the input that decodes to the first byte beyond the limit.
 
 When parsing ends with a fatal error, or with violations, the parser must return every handle the caller gave it, so that provisional uploads can be removed. The crate must document that uploads are stored before the whole body has been validated.
 
@@ -31,6 +33,8 @@ The user decided that strings must be UTF-8 and other character sets are refused
 The user decided that uploads stream to storage the caller owns, through events, with an opaque handle per stored upload returned on failure, because the gem's guide warns that upload handlers run before validation finishes (`guides/parameters/readme.md`, from the gem's v0.2.0 tag). Returning handles on a fatal error as well as on violations follows from the same concern. The gem's upload saving, an exclusive create with mode 0600 that removes a partial file on failure (`Readable#save` in `protocol-multipart`'s `lib/protocol/multipart/readable.rb`), belongs to the server layer, as `design/scope.md` says.
 
 The gem checks `accept` against the declared type, or against a type guessed from the filename when the declared type is missing or `application/octet-stream` (`Upload#initialize` in `lib/protocol/content/parameters/upload.rb`). The user decided not to guess in 0.1 and to keep the question open, since guessing from an untrusted filename may add little.
+
+Telling the parser that the input has ended follows `base-web-url`'s form parser, whose design gives the reason: form content ends only where its input does. `base-web-multipart` 0.1.0 reports a boundary after a bare CR or LF as malformed before reporting the content or preamble that precedes the break, which a body split before the break reports first, along with any limit that content exceeds; so that the result does not depend on how the body is split, this crate reads that content first, as the split body would be read. Both were settled during implementation, and the second is a workaround to remove once `base-web-multipart` reports that content itself.
 
 Converting when parsing finishes follows the gem, whose `Model#apply` converts values after the content is parsed. It was settled during implementation in place of converting each field as it ends: violations are only reported when parsing finishes, so no failure is reported later, and the parser's state stays free of the application's types, which would otherwise have to be erased and made `Send` for the parser to be held across an `await`.
 

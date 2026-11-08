@@ -11,9 +11,8 @@ use crate::{
     Upload, UploadHead, Violation, ViolationCode,
 };
 use base_web_media_type::{MediaRange, MediaRangeSet, MediaType};
+use base_web_url::{FormErrorKind, FormPath, FormPathSegment};
 use std::any::Any;
-
-mod field_name;
 
 #[cfg(test)]
 mod tests;
@@ -199,7 +198,21 @@ impl<H> Form<H> {
         name: &str,
         source: FieldSource<'_>,
     ) -> Result<Option<UploadHead>, ContentErrorKind> {
-        let components = field_name::split(name, self.declaration.limits.depth_limit)?;
+        // Names are read by the bracket grammar `base-web-url` gives URL-encoded names, so both formats read a name alike.
+        let path =
+            FormPath::parse(name, self.declaration.limits.depth_limit).map_err(
+                |kind| match kind {
+                    FormErrorKind::DepthLimit => ContentErrorKind::DepthLimit,
+                    _ => ContentErrorKind::UnknownName,
+                },
+            )?;
+        let components: Vec<&str> = path
+            .segments()
+            .map(|segment| match segment {
+                FormPathSegment::Key(key) => key,
+                FormPathSegment::Element => "",
+            })
+            .collect();
         let fields =
             resolve(self.declaration.group, &components).ok_or(ContentErrorKind::UnknownName)?;
         let (location, path, field) = self.place(&fields)?;
@@ -240,24 +253,33 @@ impl<H> Form<H> {
 
     /// Some of the current field's content. Returns how many bytes are within the field's size limit and the total content limit, and the error when not all of them are.
     pub(crate) fn content(&mut self, bytes: &[u8]) -> (usize, Option<ContentErrorKind>) {
+        let (allowance, limit) = self.allowance();
+        let accepted = bytes.len().min(allowance);
         let receiving = self
             .receiving
             .as_mut()
             .expect("content belongs to a field that began");
-        let field_remaining = receiving.size_limit - receiving.size;
-        let total_remaining = self.declaration.limits.content_size_limit - self.content_size;
-        let accepted = bytes.len().min(field_remaining).min(total_remaining);
         receiving.size += accepted;
         self.content_size += accepted;
         if let Mode::Buffer(buffer, _) = &mut receiving.mode {
             buffer.extend_from_slice(&bytes[..accepted]);
         }
-        let error = (accepted < bytes.len()).then_some(if field_remaining <= total_remaining {
-            ContentErrorKind::FieldSizeLimit
+        (accepted, (accepted < bytes.len()).then_some(limit))
+    }
+
+    /// The bytes of content the current field may still have, within its size limit and the total content limit, and the limit that more would exceed: the field's, when both would be.
+    pub(crate) fn allowance(&self) -> (usize, ContentErrorKind) {
+        let receiving = self
+            .receiving
+            .as_ref()
+            .expect("content belongs to a field that began");
+        let field_remaining = receiving.size_limit - receiving.size;
+        let total_remaining = self.declaration.limits.content_size_limit - self.content_size;
+        if field_remaining <= total_remaining {
+            (field_remaining, ContentErrorKind::FieldSizeLimit)
         } else {
-            ContentErrorKind::ContentSizeLimit
-        });
-        (accepted, error)
+            (total_remaining, ContentErrorKind::ContentSizeLimit)
+        }
     }
 
     /// The current field ends. Returns whether it is an upload, whose handle the caller must give with [`Self::store`].
@@ -278,6 +300,16 @@ impl<H> Form<H> {
                 true
             }
         }
+    }
+
+    /// Whether a field's content is arriving.
+    pub(crate) fn is_receiving(&self) -> bool {
+        self.receiving.is_some()
+    }
+
+    /// Whether an upload ended and its handle has not been given.
+    pub(crate) fn is_unstored(&self) -> bool {
+        self.unstored.is_some()
     }
 
     /// The caller's handle for the upload that ended.

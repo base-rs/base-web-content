@@ -7,7 +7,7 @@ An application must declare the content it accepts by deriving `Content` on a st
 Field types must mean:
 
 - `String`: text, which must be valid UTF-8.
-- `Vec<u8>`: the submitted bytes, unchanged. `Vec<u8>` always means bytes, never an array of integers.
+- `Vec<u8>`: the submitted bytes, unchanged. `Vec<u8>` always means bytes, never an array of integers. URL-encoded content can only submit UTF-8, as `design/errors.md` describes.
 - Integer types (`i8` to `i128`, `u8` to `u128`, and `isize` and `usize`): an optional `+` or `-` followed by one or more ASCII decimal digits, within the type's range. Whitespace, `_` separators, and prefixes such as `0x` must be refused.
 - `f32` and `f64`: a decimal number with an optional sign, fraction, and exponent, such as `-1.5`, `.5`, `5.`, or `1e3`. Whitespace, `_` separators, hexadecimal, and `NaN` or infinity in any spelling must be refused.
 - `bool`: exactly `true` or `false`.
@@ -22,7 +22,7 @@ The derive reads `Option` and `Vec` from how the field's type is spelled, as `ba
 
 A field is required unless its type is `Option<T>`. A required scalar or upload must be present; a required array must have at least one element; a required nested group must receive at least one of its fields, and its own fields are then checked. `Option<T>` is `None` when nothing for the field arrives. There is no separate nullable declaration: a URL-encoded pair without `=`, which has no value, is a type violation for every field type.
 
-Names must have the form `base`, `base[key]`, or `base[]`, repeated to any depth up to the depth limit, where `base` and each `key` are non-empty and contain no brackets. A name is matched against the declaration exactly: `items[0]` does not name an element of `items`, and a scalar name does not match an array declared as `name[]`. The depth limit, the number of components in a name, defaults to 8 and may be overridden on the struct.
+Names must have the form `base`, `base[key]`, or `base[]`, repeated to any depth up to the depth limit, where `base` and each `key` are non-empty and contain no brackets, as `base-web-url`'s `FormPath::parse` reads them for both formats, after decoding, so that the two formats cannot read a name differently; a malformed name is refused as one, however deep. A name is matched against the declaration exactly: `items[0]` does not name an element of `items`, and a scalar name does not match an array declared as `name[]`. The depth limit, the number of components in a name, defaults to 8 and may be overridden on the struct.
 
 The derive must accept attributes for the limits in `design/limits.md`: `size_limit` on any scalar, upload, or array field, `count_limit` on an array, and `accept` on an upload, a set of media ranges such as `image/*` read with `base-web-media-type`'s `MediaRangeSet`. A struct may restrict the formats it accepts; otherwise it accepts every supported format. The attributes are written `#[content(...)]`:
 
@@ -46,7 +46,7 @@ The user then asked that what remained ambiguous follow the gem's implementation
 
 Matching names exactly, instead of reading `tags` for an array named `tags[]` and reporting a type error afterwards as the gem does, follows from the user's decision that undeclared names are refused as they arrive, in `design/parsing.md`.
 
-The attribute syntax, the `FieldValue` derive and its default spelling, and reading containers from the type's spelling were settled during implementation, where the requirements above left them open. Spelling a variant as its identifier follows the rule that a field is named by its identifier; the gem's `Enumeration` takes explicit spellings, which `rename` gives. Checking only the field after `[]` when deciding whether to begin an element is `Encoding.assign`'s `last.include?(nested)`. A generic struct is rejected because a declaration is a constant of its type, from which the derive computes its depth and limits when it compiles.
+The attribute syntax, the `FieldValue` derive and its default spelling, and reading containers from the type's spelling were settled during implementation, where the requirements above left them open. Spelling a variant as its identifier follows the rule that a field is named by its identifier; the gem's `Enumeration` takes explicit spellings, which `rename` gives. Checking only the field after `[]` when deciding whether to begin an element is `Encoding.assign`'s `last.include?(nested)`. Reading names with `FormPath::parse`, which reads the whole name before counting its components, means a name that is malformed is refused as malformed (400) even when it is also too deep, where an earlier reading counted components first; the gem's `Nested` also splits a name before checking its depth. A generic struct is rejected because a declaration is a constant of its type, from which the derive computes its depth and limits when it compiles.
 
 ## Scope
 

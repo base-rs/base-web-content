@@ -29,4 +29,4 @@ The `base-web-content` and `base-web-content-macros` crates as a whole.
 
 ## Validation
 
-Inspect `cargo tree -e normal` for both crates: no async runtime or I/O crate, and `base-web-multipart` and `base-web-url` present once the formats are implemented. Review public items against this scope: a public builder for the runtime model, a format registry, JSON, file or socket access, or a `Content-Length` check belong elsewhere or need a design change first. Exercise parsing with an unsupported media type and with none, and check that both are refused.
+Inspect `cargo tree -e normal` for both crates: no async runtime or I/O crate, and `base-web-multipart` and `base-web-url` present once the formats are implemented. `getrandom`, which `base-web-multipart` uses to generate boundaries for its writer, is not called by this crate. Review public items against this scope: a public builder for the runtime model, a format registry, JSON, file or socket access, or a `Content-Length` check belong elsewhere or need a design change first. Exercise parsing with an unsupported media type and with none, and check that both are refused.

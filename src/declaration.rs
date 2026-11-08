@@ -191,6 +191,13 @@ impl ContentDeclaration {
         })
     }
 
+    /// The bytes of the longest name the declaration accepts, as a URL-encoded pair would give it before percent-encoding.
+    pub(crate) fn longest_name(&self) -> usize {
+        let mut pairs = Vec::new();
+        url_encoded_pairs(self.group, 0, 1, &mut pairs);
+        pairs.iter().map(|pair| pair.name).max().unwrap_or(0)
+    }
+
     fn multipart_body_size_limit(&self) -> usize {
         let limits = &self.limits;
         let parts = limits.part_count_limit.min(item_count(self.group));
@@ -210,11 +217,11 @@ impl ContentDeclaration {
         let mut pairs = Vec::new();
         url_encoded_pairs(self.group, 0, 1, &mut pairs);
         // The largest pairs, up to the pair count limit, since that is the most a body could hold.
-        pairs.sort_unstable_by_key(|&(pair, _)| std::cmp::Reverse(pair));
+        pairs.sort_unstable_by_key(|pair| std::cmp::Reverse(pair.size));
         let (mut remaining, mut size) = (self.limits.pair_count_limit, 0usize);
-        for (pair, count) in pairs {
-            let count = count.min(remaining);
-            size = size.saturating_add(pair.saturating_mul(count));
+        for pair in pairs {
+            let count = pair.multiplicity.min(remaining);
+            size = size.saturating_add(pair.size.saturating_mul(count));
             remaining -= count;
         }
         size.min(self.limits.url_encoded_size_limit)
@@ -243,6 +250,16 @@ fn content_size(group: &GroupDeclaration) -> usize {
     })
 }
 
+/// The longest URL-encoded pair a scalar or upload could be submitted as.
+struct Pair {
+    /// The bytes of its name, before percent-encoding.
+    name: usize,
+    /// The bytes of the pair percent-encoded, with `=` and `&`.
+    size: usize,
+    /// How many of them a body could hold.
+    multiplicity: usize,
+}
+
 /// The largest URL-encoded pair for each scalar or upload in `group`, with how many of them the group could hold: three times the bytes of the longest name, and of the content limit, since percent-encoding at most triples a byte, a `=`, and a `&`.
 ///
 /// `prefix` is the length of the name that leads to the group, or 0 at the top level, and `multiplicity` the number of groups it could hold.
@@ -250,7 +267,7 @@ fn url_encoded_pairs(
     group: &GroupDeclaration,
     prefix: usize,
     multiplicity: usize,
-    pairs: &mut Vec<(usize, usize)>,
+    pairs: &mut Vec<Pair>,
 ) {
     for field in group.fields {
         // A nested field's name is a `[key]` component, and an array adds `[]`.
@@ -265,11 +282,15 @@ fn url_encoded_pairs(
         match field.kind {
             ItemKind::Group(group) => url_encoded_pairs(group, name, multiplicity, pairs),
             ItemKind::Scalar(_) | ItemKind::Upload => {
-                let pair = name
+                let size = name
                     .saturating_mul(3)
                     .saturating_add(field.size_limit().saturating_mul(3))
                     .saturating_add(2);
-                pairs.push((pair, multiplicity));
+                pairs.push(Pair {
+                    name,
+                    size,
+                    multiplicity,
+                });
             }
         }
     }
