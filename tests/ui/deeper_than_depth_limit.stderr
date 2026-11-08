@@ -1,5 +1,5 @@
 error[E0080]: evaluation panicked: `Person` declares names deeper than its depth limit
- --> tests/ui/deeper_than_depth_limit.rs:8:10
-  |
-8 | #[derive(Content)]
-  |          ^^^^^^^ evaluation of `_::_` failed here
+  --> tests/ui/deeper_than_depth_limit.rs:11:10
+   |
+11 | #[derive(Content)]
+   |          ^^^^^^^ evaluation of `_::_` failed here

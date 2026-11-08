@@ -1,5 +1,5 @@
 error: unsupported format; expected `multipart/form-data` or `application/x-www-form-urlencoded`
- --> tests/ui/unknown_format.rs:4:19
+ --> tests/ui/unknown_format.rs:7:19
   |
-4 | #[content(formats("application/json"))]
+7 | #[content(formats("application/json"))]
   |                   ^^^^^^^^^^^^^^^^^^

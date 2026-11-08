@@ -1,5 +1,5 @@
 error: a field's name must be non-empty and contain no brackets; nested groups and arrays add them
- --> tests/ui/bracketed_name.rs:5:24
+ --> tests/ui/bracketed_name.rs:8:24
   |
-5 |     #[content(rename = "user[name]")]
+8 |     #[content(rename = "user[name]")]
   |                        ^^^^^^^^^^^^
