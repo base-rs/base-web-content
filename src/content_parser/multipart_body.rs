@@ -191,7 +191,7 @@ impl MultipartBody {
     fn error(&self, error: MultipartError) -> ContentError {
         let error = from_multipart_error(error);
         match error.kind() {
-            // `base-web-multipart` reports the preamble limit at the start of the preamble, which begins the body. This crate reports a size limit at the first byte beyond it, which for the preamble is at the limit.
+            // `base-web-multipart` reports the preamble limit at the start of the preamble, which begins the body. This crate reports it at the first byte beyond the limit, as it reports the size limits it applies itself, which for the preamble is at the limit.
             ContentErrorKind::PreambleSizeLimit => ContentError::new(
                 error.kind(),
                 self.parser.limits().preamble_size_limit as u64,
