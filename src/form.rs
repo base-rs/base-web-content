@@ -157,6 +157,8 @@ enum Mode {
     Discard,
     /// An upload, reported to the caller.
     Upload(UploadHead),
+    /// A part for an upload with an empty filename, which browsers send for a file input with no file chosen: nothing is placed, and the part must have no content.
+    NoFile,
 }
 
 /// An upload that ended, waiting for the caller's handle.
@@ -215,6 +217,18 @@ impl<H> Form<H> {
             .collect();
         let fields =
             resolve(self.declaration.group, &components).ok_or(ContentErrorKind::UnknownName)?;
+        // An upload's part with an empty filename chose no file: it is not placed, so it neither replaces an earlier upload nor adds an element, and `accept` does not apply to it.
+        if let (ItemKind::Upload, FieldSource::File { filename: "", .. }) =
+            (self.declared(&fields).kind, &source)
+        {
+            self.receiving = Some(Receiving {
+                location: Location::new(),
+                size: 0,
+                size_limit: 0,
+                mode: Mode::NoFile,
+            });
+            return Ok(None);
+        }
         let (location, path, field) = self.place(&fields)?;
         let mode = match (field.kind, source) {
             (ItemKind::Scalar(_), FieldSource::Value(charset)) => Mode::Buffer(Vec::new(), charset),
@@ -240,7 +254,7 @@ impl<H> Form<H> {
         };
         let head = match &mode {
             Mode::Upload(head) => Some(head.clone()),
-            Mode::Buffer(..) | Mode::Discard => None,
+            Mode::Buffer(..) | Mode::Discard | Mode::NoFile => None,
         };
         self.receiving = Some(Receiving {
             location,
@@ -267,12 +281,15 @@ impl<H> Form<H> {
         (accepted, (accepted < bytes.len()).then_some(limit))
     }
 
-    /// The bytes of content the current field may still have, within its size limit and the total content limit, and the limit that more would exceed: the field's, when both would be.
+    /// The bytes of content the current field may still have, within its size limit and the total content limit, and the limit that more would exceed: the field's, when both would be. A part with no file chosen may have none.
     pub(crate) fn allowance(&self) -> (usize, ContentErrorKind) {
         let receiving = self
             .receiving
             .as_ref()
             .expect("content belongs to a field that began");
+        if let Mode::NoFile = receiving.mode {
+            return (0, ContentErrorKind::UnnamedFile);
+        }
         let field_remaining = receiving.size_limit - receiving.size;
         let total_remaining = self.declaration.limits.content_size_limit - self.content_size;
         if field_remaining <= total_remaining {
@@ -290,7 +307,7 @@ impl<H> Form<H> {
                 *self.item(&receiving.location) = ItemValue::Scalar(bytes, charset);
                 false
             }
-            Mode::Discard => false,
+            Mode::Discard | Mode::NoFile => false,
             Mode::Upload(head) => {
                 self.unstored = Some(Unstored {
                     location: receiving.location,
@@ -390,6 +407,19 @@ impl<H> Form<H> {
             path.extend(element.map(FieldPathSegment::Index));
         }
         unreachable!("a resolved name ends at a scalar or an upload")
+    }
+
+    /// The declaration of the scalar or upload a resolved name ends at.
+    fn declared(&self, fields: &[usize]) -> &'static FieldDeclaration {
+        let (last, parents) = fields.split_last().expect("a resolved name is not empty");
+        let mut group = self.declaration.group;
+        for &index in parents {
+            let ItemKind::Group(inner) = group.fields[index].kind else {
+                unreachable!("a resolved name continues only into nested groups")
+            };
+            group = inner;
+        }
+        &group.fields[*last]
     }
 
     fn item(&mut self, location: &Location) -> &mut ItemValue<H> {

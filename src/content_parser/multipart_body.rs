@@ -182,7 +182,7 @@ impl MultipartBody {
             .ok_or(ContentErrorKind::MissingName)?;
         let filename = disposition.filename(self.rules).map_err(invalid)?;
         let media_type = headers.content_type.map(ContentType::into_media_type);
-        // A part is an upload if and only if it has a `filename`, even an empty one, as browsers send for a file input left empty.
+        // A part is a file if and only if it has a `filename`. For a declared upload, the form takes an empty one, which browsers send for a file input with no file chosen, to mean no file.
         let source = match &filename {
             Some(filename) => FieldSource::File {
                 filename,

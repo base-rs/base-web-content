@@ -56,6 +56,8 @@ pub enum ContentErrorKind {
     MissingName,
     /// A part's header fields cannot be read: a header line is malformed or folded, a `Content-Disposition` or `Content-Type` is invalid or repeated, its parameters break the [`ParameterRules`](crate::ParameterRules), or its `Content-Transfer-Encoding` is not an identity encoding. 400 Bad Request.
     InvalidPartHeader,
+    /// A part for a declared upload has an empty `filename`, which browsers send for a file input with no file chosen, yet has content. 400 Bad Request.
+    UnnamedFile,
     /// The content ended before it was complete: a multipart body before its closing boundary, or URL-encoded content whose end was not given to [`ContentParser::parse_end`](crate::ContentParser::parse_end). 400 Bad Request.
     UnexpectedEnd,
     /// The multipart framing is malformed, as `base-web-multipart` reports it, such as a boundary line that does not end with a line break, or a boundary after a bare CR or LF. 400 Bad Request.
@@ -93,6 +95,7 @@ impl ContentErrorKind {
             | Self::InvalidBoundary
             | Self::MissingName
             | Self::InvalidPartHeader
+            | Self::UnnamedFile
             | Self::UnexpectedEnd
             | Self::MalformedMultipart
             | Self::MalformedUrlEncoded => 400,
@@ -121,6 +124,7 @@ impl ContentErrorKind {
             Self::InvalidBoundary => "multipart media type has no valid boundary",
             Self::MissingName => "multipart part has no form-data name",
             Self::InvalidPartHeader => "multipart part has invalid header fields",
+            Self::UnnamedFile => "multipart part with an empty filename has content",
             Self::MalformedMultipart => "multipart body is malformed",
             Self::MalformedUrlEncoded => "URL-encoded content is malformed",
         }

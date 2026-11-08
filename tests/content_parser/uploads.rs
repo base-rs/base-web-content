@@ -3,7 +3,7 @@
 
 use crate::Signup;
 use crate::support::{
-    Handle, MEDIA_TYPE, Seen, body, field, file, part, run_parser, split_invariant,
+    Handle, MEDIA_TYPE, Seen, body, field, file, part, refused_at, run_parser, split_invariant,
 };
 use base_web_content::{Content, ContentErrorKind, ContentParser, Rejection, Upload};
 use base_web_media_type::MediaType;
@@ -22,7 +22,7 @@ fn streams_accepted_uploads_to_the_caller() {
     let body = body(&[
         field("name", "Ada"),
         file("avatar", "me.png", Some("image/png"), b"\x89PNG\r\n\x1a\n"),
-        file("documents[]", "", None, b""),
+        file("documents[]", "empty.txt", None, b""),
         file(
             "documents[]",
             "c:\\notes.txt",
@@ -37,7 +37,7 @@ fn streams_accepted_uploads_to_the_caller() {
             upload("avatar", "me.png", Some("image/png")),
             Seen::Content(b"\x89PNG\r\n\x1a\n".to_vec()),
             Seen::UploadEnd,
-            upload("documents[0]", "", None),
+            upload("documents[0]", "empty.txt", None),
             Seen::UploadEnd,
             upload(
                 "documents[1]",
@@ -48,7 +48,7 @@ fn streams_accepted_uploads_to_the_caller() {
             Seen::UploadEnd,
             Seen::End,
         ],
-        "an empty filename makes an upload, and a filename is kept as it was sent"
+        "an empty file is an upload, and a filename is kept as it was sent"
     );
     let stored = run.stored.clone();
     let accepted = run.accepted();
@@ -69,6 +69,213 @@ fn streams_accepted_uploads_to_the_caller() {
         (documents[0].size(), documents[0].untrusted_media_type()),
         (0, None)
     );
+}
+
+/// The part a browser sends for a file input with no file chosen: an empty filename, no content, and usually `application/octet-stream`.
+fn no_file(name: &str) -> Vec<u8> {
+    file(name, "", Some("application/octet-stream"), b"")
+}
+
+#[test]
+fn a_file_input_with_no_file_chosen_is_absent() {
+    let run = split_invariant::<Signup>(&body(&[
+        field("name", "Ada"),
+        no_file("avatar"),
+        no_file("documents[]"),
+        part(
+            &[(
+                "Content-Disposition",
+                "form-data; name=\"documents[]\"; filename=\"\"",
+            )],
+            b"",
+        ),
+    ]));
+    assert_eq!(
+        run.seen,
+        [Seen::End],
+        "no upload begins, and `accept` does not refuse it"
+    );
+    let accepted = run.accepted();
+    assert!(accepted.content.avatar.is_none());
+    assert!(accepted.content.documents.is_none(), "no element is added");
+    assert!(accepted.discarded.is_empty());
+}
+
+#[test]
+fn no_file_chosen_neither_replaces_an_upload_nor_adds_an_element() {
+    let body = body(&[
+        field("name", "Ada"),
+        file("avatar", "me.png", Some("image/png"), b"png"),
+        no_file("avatar"),
+        no_file("documents[]"),
+        file("documents[]", "a.txt", None, b"a"),
+        no_file("documents[]"),
+        no_file("documents[]"),
+        file("documents[]", "b.txt", None, b"b"),
+        no_file("documents[]"),
+    ]);
+    let run = split_invariant::<Signup>(&body);
+    assert_eq!(
+        run.seen
+            .iter()
+            .filter(|seen| matches!(seen, Seen::Upload { .. }))
+            .count(),
+        3
+    );
+    let accepted = run.accepted();
+    assert_eq!(*accepted.content.avatar.unwrap().handle(), 1);
+    let documents = accepted.content.documents.unwrap();
+    assert_eq!(
+        documents
+            .iter()
+            .map(|document| *document.handle())
+            .collect::<Vec<_>>(),
+        [2, 3],
+        "parts with no file chosen do not count toward the count limit of 2"
+    );
+    assert!(accepted.discarded.is_empty());
+}
+
+#[test]
+fn a_required_upload_with_no_file_chosen_is_required() {
+    #[derive(Content, Debug)]
+    struct Application {
+        #[content(rename = "resume", accept("application/pdf"))]
+        _resume: Upload<Handle>,
+        #[content(rename = "photos", accept("image/*"))]
+        _photos: Vec<Upload<Handle>>,
+    }
+    let body = body(&[no_file("resume"), no_file("photos[]"), no_file("photos[]")]);
+    let run = split_invariant::<Application>(&body);
+    assert_eq!(run.seen, [Seen::End]);
+    assert_eq!(run.violations(), ["resume: required", "photos: required"]);
+}
+
+#[test]
+fn no_file_chosen_in_an_array_of_groups_adds_nothing_to_its_element() {
+    #[derive(Content, Debug)]
+    struct Photo {
+        caption: String,
+        #[content(accept("image/*"))]
+        image: Option<Upload<Handle>>,
+    }
+    #[derive(Content, Debug)]
+    struct Gallery {
+        #[content(count_limit = 2)]
+        photos: Vec<Photo>,
+    }
+    let body = body(&[
+        no_file("photos[][image]"),
+        field("photos[][caption]", "first"),
+        no_file("photos[][image]"),
+        field("photos[][caption]", "second"),
+        file("photos[][image]", "2.png", Some("image/png"), b"png"),
+        no_file("photos[][image]"),
+    ]);
+    let run = split_invariant::<Gallery>(&body);
+    assert_eq!(
+        run.seen[0],
+        upload("photos[1][image]", "2.png", Some("image/png"))
+    );
+    let photos = run.accepted().content.photos;
+    assert_eq!(
+        photos
+            .iter()
+            .map(|photo| (
+                photo.caption.as_str(),
+                photo.image.as_ref().map(|image| *image.handle())
+            ))
+            .collect::<Vec<_>>(),
+        [("first", None), ("second", Some(1))]
+    );
+}
+
+#[test]
+fn no_file_chosen_with_content_is_refused() {
+    let body = body(&[
+        field("name", "Ada"),
+        file("avatar", "me.png", Some("image/png"), b"png"),
+        file("avatar", "", Some("image/png"), b"hidden"),
+    ]);
+    let run = split_invariant::<Signup>(&body);
+    assert_eq!(
+        run.seen,
+        [
+            upload("avatar", "me.png", Some("image/png")),
+            Seen::Content(b"png".to_vec()),
+            Seen::UploadEnd,
+        ],
+        "none of its content is reported"
+    );
+    let rejected = run.rejected();
+    let Rejection::Error(error) = rejected.reason else {
+        panic!("an error")
+    };
+    let start = body
+        .windows(6)
+        .position(|window| window == b"hidden")
+        .unwrap();
+    assert_eq!(
+        (error.kind(), error.offset(), error.status()),
+        (ContentErrorKind::UnnamedFile, start as u64, 400),
+        "refused at its first byte of content"
+    );
+    assert_eq!(
+        rejected.handles,
+        [1],
+        "the earlier upload's handle is returned"
+    );
+    let (_, fed) = refused_at::<Signup>(&body);
+    assert_eq!(fed, start + 1, "refused as soon as its content arrives");
+}
+
+#[test]
+fn no_file_chosen_with_content_before_a_bare_line_break_is_refused() {
+    let mut body = field("name", "Ada");
+    body.extend_from_slice(&part(
+        &[(
+            "Content-Disposition",
+            "form-data; name=\"avatar\"; filename=\"\"",
+        )],
+        b"x\n--XyZ--\r\n",
+    ));
+    let error = split_invariant::<Signup>(&body).error();
+    let start = body
+        .windows(3)
+        .position(|window| window == b"x\n-")
+        .unwrap();
+    assert_eq!(
+        (error.kind(), error.offset()),
+        (ContentErrorKind::UnnamedFile, start as u64),
+        "its content is refused before the malformed boundary after it"
+    );
+}
+
+#[test]
+fn a_file_with_an_empty_filename_is_still_a_file_for_a_scalar() {
+    let run = split_invariant::<Signup>(&body(&[field("name", "Ada"), no_file("e-mail")]));
+    assert_eq!(run.violations(), ["e-mail: invalid_type"]);
+}
+
+#[test]
+fn an_extended_filename_that_decodes_empty_chose_no_file() {
+    let body = body(&[
+        field("name", "Ada"),
+        part(
+            &[(
+                "Content-Disposition",
+                "form-data; name=\"avatar\"; filename*=utf-8''",
+            )],
+            b"",
+        ),
+    ]);
+    let media_type = MediaType::parse(MEDIA_TYPE).unwrap();
+    let parser = ContentParser::<Signup, Handle>::new(Some(&media_type))
+        .unwrap()
+        .with_parameter_rules(ParameterRules::Mime);
+    let run = run_parser(parser, &[&body], b"");
+    assert_eq!(run.seen, [Seen::End]);
+    assert!(run.accepted().content.avatar.is_none());
 }
 
 #[test]

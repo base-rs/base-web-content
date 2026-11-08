@@ -7,7 +7,7 @@ use std::fmt;
 
 /// A file a form submitted, with the caller's handle for where its content was stored.
 ///
-/// The parser does not keep an upload's content: it reports the content to the caller as it arrives, and the caller stores it, such as in a temporary file, and gives the parser a handle of type `H` for it. The filename and media type are what the client declared, and must not be trusted: a filename can contain path separators or be empty, and a media type need not describe the content.
+/// The parser does not keep an upload's content: it reports the content to the caller as it arrives, and the caller stores it, such as in a temporary file, and gives the parser a handle of type `H` for it. The filename and media type are what the client declared, and must not be trusted: a filename can contain path separators, and a media type need not describe the content. The parser never gives an upload with an empty filename, which means no file was chosen.
 pub struct Upload<H> {
     filename: String,
     media_type: Option<MediaType>,
@@ -35,7 +35,7 @@ impl<H> Upload<H> {
         Self::new(head.filename, head.media_type, size, handle)
     }
 
-    /// The filename the client declared, which may be empty, as browsers send for a file input left empty. It must not be used as a local path without checking it.
+    /// The filename the client declared, which the parser never gives empty, since an empty filename means no file was chosen. It must not be used as a local path without checking it.
     pub fn untrusted_filename(&self) -> &str {
         &self.filename
     }
@@ -93,7 +93,7 @@ impl UploadHead {
         &self.path
     }
 
-    /// The filename the client declared, which may be empty. It must not be used as a local path without checking it.
+    /// The filename the client declared, which is not empty, since an empty filename means no file was chosen. It must not be used as a local path without checking it.
     pub fn untrusted_filename(&self) -> &str {
         &self.filename
     }
