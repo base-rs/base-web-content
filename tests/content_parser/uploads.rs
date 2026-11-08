@@ -137,6 +137,21 @@ fn no_file_chosen_neither_replaces_an_upload_nor_adds_an_element() {
 }
 
 #[test]
+fn no_file_chosen_does_not_replace_a_refused_value() {
+    for (refused, code) in [
+        (field("avatar", "me.png"), "invalid_type"),
+        (
+            file("avatar", "me.gif", Some("image/gif"), b"gif"),
+            "unsupported_media_type",
+        ),
+    ] {
+        let run =
+            split_invariant::<Signup>(&body(&[field("name", "Ada"), refused, no_file("avatar")]));
+        assert_eq!(run.violations(), [format!("avatar: {code}")]);
+    }
+}
+
+#[test]
 fn a_required_upload_with_no_file_chosen_is_required() {
     #[derive(Content, Debug)]
     struct Application {
