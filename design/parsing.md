@@ -1,0 +1,43 @@
+# Parsing
+
+## Requirement
+
+The parser must be fed a body in pieces of any size, as `base-web-multipart`'s `MultipartParser` is, and must give the same result, events, violations, and errors however the body is split. It must choose the format from the request's media type essence, refusing an unsupported type, a missing one, a format the declaration does not accept, and a `multipart/form-data` type without a valid boundary before reading any content.
+
+Parsing must be strict by default, and any leniency must be an explicit opt-in of the declaration:
+
+- A name the declaration does not accept, as `design/declarations.md` matches names, is fatal as soon as the name is complete, in a part's header section or before a URL-encoded `=` or `&`, before any of its content is read; a URL-encoded name is fatal as soon as it is longer than three times the longest name the declaration accepts, the most that percent-encoding could make it.
+- A multipart part whose `Content-Disposition` is missing, is not `form-data`, or has no `name` is fatal.
+- A field or upload that exceeds its size limit, or any other limit in `design/limits.md`, is fatal as soon as the bytes exceed it; parsing does not continue past it.
+
+Text, bytes, and other scalar fields are buffered by the parser, within their limits, and converted when they end. A text field must be refused if it is not valid UTF-8, or if its part declares a `charset` other than `UTF-8` or `US-ASCII`, and a URL-encoded body whose media type declares such a `charset` must be refused as unsupported; other character sets are not supported. Declared and accepted uploads must not be buffered: their content must be reported to the caller as events borrowing from the input, for the caller to write to storage it owns. When an upload begins, the parser must report its declared path, filename, and media type; when it ends, the caller must give the parser an opaque handle for what it stored, which the result holds in the `Upload`. The filename and declared media type are untrusted and must be presented as such.
+
+An upload's `accept` must be checked against the media type its part declares, before any content is reported; a part without a `Content-Type` does not match. The parser must not guess a media type from the filename. An upload that does not match, a multipart part with a `filename` for a field that is not an upload, and one without a `filename`, or a URL-encoded value, for an upload, are violations: their content is read and discarded, within the field's size limit, and not reported to the caller.
+
+A name submitted more than once for a scalar, an upload, or a nested group's field is not an error: the last value wins. When a later upload replaces an earlier one, the earlier handle must be returned to the caller as discarded. Repetitions count toward every running total in `design/limits.md`.
+
+When parsing ends with a fatal error, or with violations, the parser must return every handle the caller gave it, so that provisional uploads can be removed. The crate must document that uploads are stored before the whole body has been validated.
+
+## Open Questions
+
+Whether guessing an upload's media type from its filename extension is useful, for example when a client declares `application/octet-stream`, remains open, to be checked against real-world upload data. Until it is decided, `accept` checks only the declared type, and the implementation must note the question where it checks.
+
+## Rationale
+
+These decisions were made with the user on 2026-11-08, drawing on the Ruby gem `protocol-content` 0.2.0 and the gems it uses. The gem dispatches on the media type's name (`Parser#parse` in `lib/protocol/content/parser.rb`) and refuses a missing type (`UnsupportedMediaTypeError` in `lib/protocol/content/error.rb`). It buffers undeclared scalar fields and reports them as `unknown` after parsing (`Model#apply` in `lib/protocol/content/parameters/model.rb`), and records an upload over its size limit as a violation while reading on (`UploadField#process` in `lib/protocol/content/parameters/field.rb`). The user decided this crate is stricter: an undeclared name is fatal before its content is read, an over-limit upload stops parsing, and leniency is only ever an explicit opt-in. A form part without a `form-data` name is fatal in the gem too (`protocol-multipart` 0.7.0's `lib/protocol/multipart/form_data/parser.rb`).
+
+The user decided that strings must be UTF-8 and other character sets are refused; transparently transcoding to UTF-8 from what a user agent declares, such as a `_charset_` field, may come later, so that applications only ever see UTF-8. The gem keeps text as binary strings whatever their charset.
+
+The user decided that uploads stream to storage the caller owns, through events, with an opaque handle per stored upload returned on failure, because the gem's guide warns that upload handlers run before validation finishes (`guides/parameters/readme.md`, from the gem's v0.2.0 tag). Returning handles on a fatal error as well as on violations follows from the same concern. The gem's upload saving, an exclusive create with mode 0600 that removes a partial file on failure (`Readable#save` in `protocol-multipart`'s `lib/protocol/multipart/readable.rb`), belongs to the server layer, as `design/scope.md` says.
+
+The gem checks `accept` against the declared type, or against a type guessed from the filename when the declared type is missing or `application/octet-stream` (`Upload#initialize` in `lib/protocol/content/parameters/upload.rb`). The user decided not to guess in 0.1 and to keep the question open, since guessing from an untrusted filename may add little.
+
+The user asked that duplicate names follow the gem: `Encoding.assign` in `protocol-url` 0.19.0's `lib/protocol/url/encoding.rb` assigns each value in turn, so the last wins. In the gem, a replaced upload has already been handled and is lost; returning its handle keeps the user's requirement that every stored upload can be removed. Mismatched parts follow the gem's violations: an upload not accepted by `accept` is `unsupported_media_type`, and a value where an upload is declared is `invalid_type` (`UploadField#process` and `#apply_upload`), while a file part for a scalar field is omitted there and refused here as `invalid_type`, so that a file is never silently dropped.
+
+## Scope
+
+The parser for every format, its events, the upload handles, and the conversion of field values.
+
+## Validation
+
+Parse bodies split at every point and fed a byte at a time, and compare events, results, violations, and errors with the whole body. Tests that each fatal case is reported no later than the byte that decides it, and that no content of an undeclared field or rejected upload reaches the caller. Tests for invalid UTF-8, declared charsets, `accept` with and without `Content-Type`, filenames that suggest another type, duplicate scalars and uploads, and that every handle is returned after a fatal error and after violations. Check that the filename-guessing question is noted in the code that checks `accept`.
