@@ -617,7 +617,7 @@ fn errors_map_to_one_status_each() {
         (ContentErrorKind::InvalidBoundary, 400),
         (ContentErrorKind::MissingName, 400),
         (ContentErrorKind::InvalidPartHeader, 400),
-        (ContentErrorKind::UnnamedFile, 400),
+        (ContentErrorKind::EmptyFilenameContent, 400),
         (ContentErrorKind::UnsupportedCharset, 415),
         (ContentErrorKind::PairCountLimit, 413),
         (ContentErrorKind::UnexpectedEnd, 400),

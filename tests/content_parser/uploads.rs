@@ -151,43 +151,121 @@ fn a_required_upload_with_no_file_chosen_is_required() {
     assert_eq!(run.violations(), ["resume: required", "photos: required"]);
 }
 
+#[derive(Content, Debug)]
+struct Photo {
+    caption: String,
+    #[content(accept("image/*"))]
+    image: Option<Upload<Handle>>,
+    #[content(accept("image/*"))]
+    variants: Option<Vec<Upload<Handle>>>,
+}
+
+#[derive(Content, Debug)]
+struct Gallery {
+    #[content(count_limit = 2)]
+    photos: Vec<Photo>,
+}
+
+/// Each photo's caption, its image's handle, and its variants' handles.
+fn photos(run: crate::support::Run<Gallery>) -> Vec<(String, Option<Handle>, Option<Vec<Handle>>)> {
+    let handles =
+        |uploads: &Vec<Upload<Handle>>| uploads.iter().map(|upload| *upload.handle()).collect();
+    run.accepted()
+        .content
+        .photos
+        .iter()
+        .map(|photo| {
+            (
+                photo.caption.clone(),
+                photo.image.as_ref().map(|image| *image.handle()),
+                photo.variants.as_ref().map(handles),
+            )
+        })
+        .collect()
+}
+
 #[test]
-fn no_file_chosen_in_an_array_of_groups_adds_nothing_to_its_element() {
-    #[derive(Content, Debug)]
-    struct Photo {
-        caption: String,
-        #[content(accept("image/*"))]
-        image: Option<Upload<Handle>>,
-    }
-    #[derive(Content, Debug)]
-    struct Gallery {
-        #[content(count_limit = 2)]
-        photos: Vec<Photo>,
-    }
-    let body = body(&[
+fn no_file_chosen_ends_an_element_of_an_array_of_groups() {
+    // Two rows of a form, in the order a browser submits them, the first with no file chosen.
+    let image_first = body(&[
         no_file("photos[][image]"),
         field("photos[][caption]", "first"),
-        no_file("photos[][image]"),
-        field("photos[][caption]", "second"),
         file("photos[][image]", "2.png", Some("image/png"), b"png"),
-        no_file("photos[][image]"),
+        field("photos[][caption]", "second"),
     ]);
-    let run = split_invariant::<Gallery>(&body);
+    let run = split_invariant::<Gallery>(&image_first);
     assert_eq!(
         run.seen[0],
         upload("photos[1][image]", "2.png", Some("image/png"))
     );
-    let photos = run.accepted().content.photos;
     assert_eq!(
-        photos
-            .iter()
-            .map(|photo| (
-                photo.caption.as_str(),
-                photo.image.as_ref().map(|image| *image.handle())
-            ))
-            .collect::<Vec<_>>(),
-        [("first", None), ("second", Some(1))]
+        photos(run),
+        [
+            ("first".to_owned(), None, None),
+            ("second".to_owned(), Some(1), None)
+        ],
+        "the file belongs to the second row"
     );
+    let caption_first = body(&[
+        field("photos[][caption]", "first"),
+        no_file("photos[][image]"),
+        field("photos[][caption]", "second"),
+        file("photos[][image]", "2.png", Some("image/png"), b"png"),
+    ]);
+    assert_eq!(
+        photos(split_invariant::<Gallery>(&caption_first)),
+        [
+            ("first".to_owned(), None, None),
+            ("second".to_owned(), Some(1), None)
+        ]
+    );
+    let variants = body(&[
+        no_file("photos[][variants][]"),
+        field("photos[][caption]", "first"),
+        file("photos[][variants][]", "2.png", Some("image/png"), b"png"),
+        field("photos[][caption]", "second"),
+    ]);
+    assert_eq!(
+        photos(split_invariant::<Gallery>(&variants)),
+        [
+            ("first".to_owned(), None, None),
+            ("second".to_owned(), None, Some(vec![1]))
+        ],
+        "an array with only no file chosen is absent, and ends the element as any field does"
+    );
+}
+
+#[test]
+fn no_file_chosen_in_a_nested_group_is_reported_at_the_upload() {
+    #[derive(Content, Debug)]
+    struct Profile {
+        #[content(rename = "avatar")]
+        _avatar: Upload<Handle>,
+    }
+    #[derive(Content, Debug)]
+    struct Account {
+        #[content(rename = "profile")]
+        _profile: Option<Profile>,
+    }
+    let run = split_invariant::<Account>(&body(&[no_file("profile[avatar]")]));
+    assert_eq!(run.violations(), ["profile[avatar]: required"]);
+}
+
+#[test]
+fn no_file_chosen_counts_toward_the_part_count_limit() {
+    #[derive(Content, Debug)]
+    #[content(part_count_limit = 2)]
+    struct Avatars {
+        #[content(rename = "avatars")]
+        _avatars: Option<Vec<Upload<Handle>>>,
+    }
+    let body = body(&[
+        no_file("avatars[]"),
+        no_file("avatars[]"),
+        no_file("avatars[]"),
+    ]);
+    let error = split_invariant::<Avatars>(&body).error();
+    assert_eq!(error.kind(), ContentErrorKind::PartCountLimit);
 }
 
 #[test]
@@ -217,7 +295,7 @@ fn no_file_chosen_with_content_is_refused() {
         .unwrap();
     assert_eq!(
         (error.kind(), error.offset(), error.status()),
-        (ContentErrorKind::UnnamedFile, start as u64, 400),
+        (ContentErrorKind::EmptyFilenameContent, start as u64, 400),
         "refused at its first byte of content"
     );
     assert_eq!(
@@ -246,15 +324,60 @@ fn no_file_chosen_with_content_before_a_bare_line_break_is_refused() {
         .unwrap();
     assert_eq!(
         (error.kind(), error.offset()),
-        (ContentErrorKind::UnnamedFile, start as u64),
+        (ContentErrorKind::EmptyFilenameContent, start as u64),
         "its content is refused before the malformed boundary after it"
     );
+}
+
+#[test]
+fn no_file_chosen_with_content_that_could_begin_a_boundary_is_refused() {
+    for content in [&b"\r\n-x"[..], b"-", b"\r", b"\r\n--Xy"] {
+        let body = body(&[
+            field("name", "Ada"),
+            file("avatar", "", Some("application/octet-stream"), content),
+        ]);
+        let error = split_invariant::<Signup>(&body).error();
+        let start = body.len() - b"\r\n--XyZ--\r\n".len() - content.len();
+        assert_eq!(
+            (error.kind(), error.offset()),
+            (ContentErrorKind::EmptyFilenameContent, start as u64),
+            "{content:?}"
+        );
+    }
 }
 
 #[test]
 fn a_file_with_an_empty_filename_is_still_a_file_for_a_scalar() {
     let run = split_invariant::<Signup>(&body(&[field("name", "Ada"), no_file("e-mail")]));
     assert_eq!(run.violations(), ["e-mail: invalid_type"]);
+}
+
+#[test]
+fn an_extended_filename_takes_the_place_of_an_empty_one() {
+    let body = body(&[
+        field("name", "Ada"),
+        part(
+            &[
+                (
+                    "Content-Disposition",
+                    "form-data; name=\"avatar\"; filename=\"\"; filename*=utf-8''a.png",
+                ),
+                ("Content-Type", "image/png"),
+            ],
+            b"png",
+        ),
+    ]);
+    let media_type = MediaType::parse(MEDIA_TYPE).unwrap();
+    let parser = ContentParser::<Signup, Handle>::new(Some(&media_type))
+        .unwrap()
+        .with_parameter_rules(ParameterRules::Mime);
+    let run = run_parser(parser, &[&body], b"");
+    assert_eq!(run.seen[0], upload("avatar", "a.png", Some("image/png")));
+    assert_eq!(
+        split_invariant::<Signup>(&body).error().kind(),
+        ContentErrorKind::InvalidPartHeader,
+        "form data refuses the extended filename"
+    );
 }
 
 #[test]
