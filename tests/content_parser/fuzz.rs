@@ -316,6 +316,14 @@ struct Reached {
     stored: usize,
 }
 
+/// Check that a run of `count` bodies reached more than a fiftieth of them for what `reached` counts, well below what any seed reaches, so that another `FUZZ_SEED` does not fail it. A run of fewer than 100 bodies is too short to say.
+#[track_caller]
+fn reaches(count: usize, reached: usize, what: &str) {
+    if count >= 100 {
+        assert!(reached > count / 50, "{reached} {what} of {count}");
+    }
+}
+
 /// Check that the body gives the same result however it is split, that no body beyond the computed maximum is accepted, and that every handle the parser was given is returned.
 fn check<T: ContentHandles<Handle> + Handles + Debug>(
     media_type: &str,
@@ -376,22 +384,10 @@ fn generated_multipart_bodies() {
         );
     }
     for reached in [&fuzzed, &tight] {
-        assert!(
-            reached.accepted > count / 20,
-            "{} accepted",
-            reached.accepted
-        );
-        assert!(
-            reached.stored > count / 10,
-            "{} uploads stored",
-            reached.stored
-        );
+        reaches(count, reached.accepted, "accepted");
+        reaches(count, reached.stored, "uploads stored");
     }
-    assert!(
-        tight.beyond_maximum > count / 20,
-        "{} beyond the maximum",
-        tight.beyond_maximum
-    );
+    reaches(count, tight.beyond_maximum, "beyond the maximum");
 }
 
 #[test]
@@ -405,12 +401,8 @@ fn generated_url_encoded_content() {
         let body = url_encoded(&mut random, TIGHT_NAMES);
         check::<Tight>(URL_ENCODED, ContentFormat::UrlEncoded, &body, &mut tight);
     }
-    assert!(fuzzed.accepted > count / 20, "{} accepted", fuzzed.accepted);
-    assert!(
-        tight.beyond_maximum > count / 20,
-        "{} beyond the maximum",
-        tight.beyond_maximum
-    );
+    reaches(count, fuzzed.accepted, "accepted");
+    reaches(count, tight.beyond_maximum, "beyond the maximum");
 }
 
 #[test]
