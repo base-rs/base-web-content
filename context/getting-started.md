@@ -170,6 +170,8 @@ assert_eq!((avatar.size(), &files[*avatar.handle()][..]), (4, &b"\x89PNG"[..]));
 
 An upload is reported only when its name is declared, its part has a `filename`, and its declared `Content-Type` is one `accept` allows. The media type is never guessed from the filename. Any other file, and its content, is read and discarded within its field's size limit, and recorded as a violation.
 
+A browser submits a file input with no file chosen as a part with an empty `filename` and no content. Such a part chooses no file: `accept` does not apply to it, no upload is reported, an `Option<Upload<H>>` is `None`, a `Vec<Upload<H>>` gains no element, and a required upload is reported as `required`. In an array of groups, it still ends an element, as any field does, so that a file chosen in the next row stays with that row. A part with an empty `filename` that has content is refused with `ContentErrorKind::EmptyFilenameContent`.
+
 Uploads are stored before the whole body has been validated. When parsing fails, `Rejected::handles` holds every handle you gave the parser, so that you can remove what you stored, and an upload whose content was still arriving has no handle, so remove what you stored of it too; when a later upload for the same field replaces one, the earlier handle is returned in `Accepted::discarded`. Saving uploads safely, such as with an exclusive create and restrictive permissions, belongs to your server.
 
 ## Errors and violations

@@ -24,7 +24,10 @@ struct GroupValue<H> {
 
 enum Slot<H> {
     Empty,
+    /// An upload whose part chose no file, which arrived but holds nothing.
+    NoFile,
     Single(ItemValue<H>),
+    /// An array's elements, which are none when only parts with no file chosen arrived.
     Array(Vec<ItemValue<H>>),
 }
 
@@ -110,6 +113,17 @@ impl<H> Slot<H> {
         Ok((Some(elements.len() - 1), None))
     }
 
+    /// Mark an upload whose part chose no file as arrived, so that it ends an element of an array of groups as any field does, without replacing an upload already there or adding an element to an array.
+    fn choose_no_file(&mut self, array: bool) {
+        if let Self::Empty = self {
+            *self = if array {
+                Self::Array(Vec::new())
+            } else {
+                Self::NoFile
+            };
+        }
+    }
+
     /// The item at `element` of an array, or the single item when `element` is `None`.
     fn item(&mut self, element: Option<usize>) -> &mut ItemValue<H> {
         match (self, element) {
@@ -157,6 +171,8 @@ enum Mode {
     Discard,
     /// An upload, reported to the caller.
     Upload(UploadHead),
+    /// A part for an upload with an empty filename, which browsers send for a file input with no file chosen: nothing is placed, and the part must have no content.
+    NoFile,
 }
 
 /// An upload that ended, waiting for the caller's handle.
@@ -215,7 +231,21 @@ impl<H> Form<H> {
             .collect();
         let fields =
             resolve(self.declaration.group, &components).ok_or(ContentErrorKind::UnknownName)?;
-        let (location, path, field) = self.place(&fields)?;
+        // An upload's part with an empty filename chose no file: it holds nothing, and `accept` does not apply to it.
+        let no_file = matches!(
+            (self.declared(&fields).kind, &source),
+            (ItemKind::Upload, FieldSource::File { filename: "", .. })
+        );
+        let Some((location, path, field)) = self.place(&fields, no_file)? else {
+            self.receiving = Some(Receiving {
+                // There is no item for its content, which must be empty.
+                location: Location::new(),
+                size: 0,
+                size_limit: 0,
+                mode: Mode::NoFile,
+            });
+            return Ok(None);
+        };
         let mode = match (field.kind, source) {
             (ItemKind::Scalar(_), FieldSource::Value(charset)) => Mode::Buffer(Vec::new(), charset),
             (
@@ -240,7 +270,7 @@ impl<H> Form<H> {
         };
         let head = match &mode {
             Mode::Upload(head) => Some(head.clone()),
-            Mode::Buffer(..) | Mode::Discard => None,
+            Mode::Buffer(..) | Mode::Discard | Mode::NoFile => None,
         };
         self.receiving = Some(Receiving {
             location,
@@ -267,12 +297,15 @@ impl<H> Form<H> {
         (accepted, (accepted < bytes.len()).then_some(limit))
     }
 
-    /// The bytes of content the current field may still have, within its size limit and the total content limit, and the limit that more would exceed: the field's, when both would be.
+    /// The bytes of content the current field may still have, within its size limit and the total content limit, and the limit that more would exceed: the field's, when both would be. A part with no file chosen may have none.
     pub(crate) fn allowance(&self) -> (usize, ContentErrorKind) {
         let receiving = self
             .receiving
             .as_ref()
             .expect("content belongs to a field that began");
+        if let Mode::NoFile = receiving.mode {
+            return (0, ContentErrorKind::EmptyFilenameContent);
+        }
         let field_remaining = receiving.size_limit - receiving.size;
         let total_remaining = self.declaration.limits.content_size_limit - self.content_size;
         if field_remaining <= total_remaining {
@@ -290,7 +323,7 @@ impl<H> Form<H> {
                 *self.item(&receiving.location) = ItemValue::Scalar(bytes, charset);
                 false
             }
-            Mode::Discard => false,
+            Mode::Discard | Mode::NoFile => false,
             Mode::Upload(head) => {
                 self.unstored = Some(Unstored {
                     location: receiving.location,
@@ -359,11 +392,12 @@ impl<H> Form<H> {
         })
     }
 
-    /// Place a resolved name in the tree, creating its groups and array elements, and mark its item as arriving.
+    /// Place a resolved name in the tree, creating its groups and array elements, and mark its item as arriving, or, for an upload with `no_file` chosen, as arrived with nothing to place.
     fn place(
         &mut self,
         fields: &[usize],
-    ) -> Result<(Location, FieldPath, &'static FieldDeclaration), ContentErrorKind> {
+        no_file: bool,
+    ) -> Result<Option<(Location, FieldPath, &'static FieldDeclaration)>, ContentErrorKind> {
         let (mut location, mut path) = (Location::new(), FieldPath::default());
         let (mut declaration, mut group) = (self.declaration.group, &mut self.root);
         for (depth, &index) in fields.iter().enumerate() {
@@ -378,18 +412,35 @@ impl<H> Form<H> {
                     declaration = inner;
                     element
                 }
+                _ if no_file => {
+                    group.slots[index].choose_no_file(count_limit.is_some());
+                    return Ok(None);
+                }
                 _ => {
                     let (element, replaced) = group.slots[index].begin_item(count_limit)?;
                     self.discarded.extend(replaced);
                     location.push((index, element));
                     path.extend(element.map(FieldPathSegment::Index));
-                    return Ok((location, path, field));
+                    return Ok(Some((location, path, field)));
                 }
             };
             location.push((index, element));
             path.extend(element.map(FieldPathSegment::Index));
         }
         unreachable!("a resolved name ends at a scalar or an upload")
+    }
+
+    /// The declaration of the scalar or upload a resolved name ends at.
+    fn declared(&self, fields: &[usize]) -> &'static FieldDeclaration {
+        let (last, parents) = fields.split_last().expect("a resolved name is not empty");
+        let mut group = self.declaration.group;
+        for &index in parents {
+            let ItemKind::Group(inner) = group.fields[index].kind else {
+                unreachable!("a resolved name continues only into nested groups")
+            };
+            group = inner;
+        }
+        &group.fields[*last]
     }
 
     fn item(&mut self, location: &Location) -> &mut ItemValue<H> {
@@ -490,13 +541,9 @@ fn check_group<H>(
         .map(|(field, slot)| {
             path.push(FieldPathSegment::Name(field.name));
             let checked = match slot {
-                Slot::Empty => {
-                    use crate::declaration::Container;
-                    if matches!(field.container, Container::Required | Container::Array(_)) {
-                        violations.push(Violation::new(path.clone(), ViolationCode::Required));
-                    }
-                    CheckedSlot::Absent
-                }
+                // An array without elements arrived only as parts with no file chosen, which hold nothing.
+                Slot::Array(items) if items.is_empty() => absent(field, path, violations),
+                Slot::Empty | Slot::NoFile => absent(field, path, violations),
                 Slot::Single(item) => {
                     CheckedSlot::Single(check_item(field, item, path, violations))
                 }
@@ -517,6 +564,19 @@ fn check_group<H>(
             checked
         })
         .collect()
+}
+
+/// A field that holds nothing: a violation when it is required.
+fn absent<H>(
+    field: &FieldDeclaration,
+    path: &FieldPath,
+    violations: &mut Vec<Violation>,
+) -> CheckedSlot<H> {
+    use crate::declaration::Container;
+    if matches!(field.container, Container::Required | Container::Array(_)) {
+        violations.push(Violation::new(path.clone(), ViolationCode::Required));
+    }
+    CheckedSlot::Absent
 }
 
 fn check_item<H>(
@@ -552,7 +612,7 @@ fn release_group<H>(group: GroupValue<H>, handles: &mut Vec<H>) {
     };
     for slot in group.slots {
         match slot {
-            Slot::Empty => {}
+            Slot::Empty | Slot::NoFile => {}
             Slot::Single(item) => release(item, handles),
             Slot::Array(items) => items.into_iter().for_each(|item| release(item, handles)),
         }

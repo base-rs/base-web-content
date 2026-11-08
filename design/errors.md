@@ -8,7 +8,7 @@ A fatal error stops parsing. It must give the offset in the body at which it was
 
 - 415 Unsupported Media Type: a missing or unsupported media type, including a URL-encoded body with an unsupported `charset`, or a format the declaration does not accept;
 - 413 Content Too Large: any limit in `design/limits.md`, including an upload over its size limit and a name deeper than the depth limit, which is reported as such even though the declaration cannot accept it either, unless it is a URL-encoded name already refused for its length, as the rationale describes;
-- 400 Bad Request: anything else, including malformed multipart framing, a missing or invalid boundary, a part without a `form-data` name, a malformed URL-encoded pair, and a name the declaration does not accept.
+- 400 Bad Request: anything else, including malformed multipart framing, a missing or invalid boundary, a part without a `form-data` name, a part for an upload with no file chosen that has content, a malformed URL-encoded pair, and a name the declaration does not accept.
 
 Once the parser reports a fatal error, it must report the same error again. Errors from `base-web-multipart` and `base-web-url` must be reported as fatal errors of this crate with the same offset, except where that offset depends on how the body is split, which `design/parsing.md` forbids: `base-web-multipart` 0.1.0 reports its preamble limit at the start of the input it was given, so this crate reports it at the first byte over the limit, and it reports a boundary after a bare CR or LF before the content that precedes it, so this crate reads that content first, as `design/parsing.md` describes. The public error kinds are this crate's own, so that its API does not change with those crates' versions.
 
