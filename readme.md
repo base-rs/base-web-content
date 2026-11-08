@@ -2,7 +2,7 @@
 
 Declarative, limited parsing of web request content, such as forms, without I/O, for Rust.
 
-Applications declare the content they accept, with limits on every field and upload, so that a server never parses a body without knowing its limits. The crate is fed bytes and does no I/O. It is under development and has no public API yet.
+Applications declare the content they accept, with limits on every field and upload, so that a server never parses a body without knowing its limits. The crate is fed bytes and does no I/O. Declarations are written with `#[derive(Content)]`; the parser that reads bodies into them is under development.
 
 ## Usage
 

@@ -1,0 +1,5 @@
+error: the spelling `Admin` is already used by another variant
+ --> tests/ui/duplicate_spelling.rs:6:24
+  |
+6 |     #[content(rename = "Admin")]
+  |                        ^^^^^^^

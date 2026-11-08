@@ -1,0 +1,5 @@
+error: the name `email` is already declared by the field `email`
+ --> tests/ui/duplicate_name.rs:6:24
+  |
+6 |     #[content(rename = "email")]
+  |                        ^^^^^^^
