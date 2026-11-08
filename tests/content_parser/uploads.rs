@@ -633,3 +633,65 @@ fn a_parser_can_be_held_across_threads() {
     assert_send_sync::<base_web_content::Accepted<Signup, Handle>>();
     assert_send_sync::<base_web_content::Rejected<Handle>>();
 }
+
+#[test]
+fn a_filename_is_given_as_it_was_sent_with_any_character() {
+    let filename = "invoice\t\u{202e}fdp.exe";
+    let run = split_invariant::<Signup>(&body(&[
+        field("name", "Ada"),
+        file("documents[]", filename, None, b"x"),
+    ]));
+    assert_eq!(run.seen[0], upload("documents[0]", filename, None));
+}
+
+#[test]
+fn an_extended_filename_can_hold_control_characters() {
+    let body = body(&[
+        field("name", "Ada"),
+        part(
+            &[(
+                "Content-Disposition",
+                "form-data; name=\"documents[]\"; filename*=utf-8''a%0D%0Ab%00c",
+            )],
+            b"x",
+        ),
+    ]);
+    let media_type = MediaType::parse(MEDIA_TYPE).unwrap();
+    let parser = ContentParser::<Signup, Handle>::new(Some(&media_type))
+        .unwrap()
+        .with_parameter_rules(ParameterRules::Mime);
+    let run = run_parser(parser, &[&body], b"");
+    assert_eq!(run.seen[0], upload("documents[0]", "a\r\nb\0c", None));
+}
+
+#[test]
+fn finishing_when_the_input_stops_early_returns_every_handle() {
+    let body = body(&[
+        file("avatar", "1.png", Some("image/png"), b"one"),
+        file("documents[]", "2.txt", None, b"two"),
+    ]);
+    // The client disconnects during the second upload, and the caller finishes without giving the end.
+    let cut = body.windows(3).position(|window| window == b"two").unwrap() + 1;
+    let media_type = MediaType::parse(MEDIA_TYPE).unwrap();
+    let mut parser = ContentParser::<Signup, Handle>::new(Some(&media_type)).unwrap();
+    let mut input = &body[..cut];
+    let mut handle = 0;
+    loop {
+        let parsed = parser.parse(input).unwrap();
+        input = &input[parsed.consumed..];
+        match parsed.event {
+            base_web_content::ContentEvent::UploadEnd => {
+                handle += 1;
+                parser.store(handle);
+            }
+            base_web_content::ContentEvent::Incomplete => break,
+            _ => {}
+        }
+    }
+    let rejected = parser.finish().unwrap_err();
+    let Rejection::Error(error) = rejected.reason else {
+        panic!("an error")
+    };
+    assert_eq!(error.kind(), ContentErrorKind::UnexpectedEnd);
+    assert_eq!(rejected.handles, [1]);
+}

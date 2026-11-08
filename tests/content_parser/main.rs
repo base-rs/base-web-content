@@ -4,6 +4,7 @@
 mod errors;
 mod fields;
 mod formatting;
+mod fuzz;
 mod limits;
 mod round_trip;
 mod support;

@@ -26,7 +26,8 @@ let mut parser = ContentParser::<Login>::new(Some(&media_type))?;
 // With the whole body in memory, its end is known: parse until the parser reports it.
 let mut input = &body[..];
 loop {
-    let parsed = parser.parse_end(input)?;
+    // `finish` reports a fatal error again, with the handle of every upload stored so far, so parsing stops here rather than returning early.
+    let Ok(parsed) = parser.parse_end(input) else { break };
     input = &input[parsed.consumed..];
     if parsed.event == ContentEvent::End {
         break;

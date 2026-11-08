@@ -92,10 +92,11 @@ let chunks: [&[u8]; 3] = [
 let media_type = MediaType::parse("multipart/form-data; boundary=XyZ")?;
 let mut parser = ContentParser::<Comment>::new(Some(&media_type))?;
 let mut buffer = Vec::new();
-for chunk in chunks {
+'input: for chunk in chunks {
     buffer.extend_from_slice(chunk);
     loop {
-        let parsed = parser.parse(&buffer)?;
+        // After a fatal error, stop parsing and finish: `finish` reports the error, with the handle of every upload stored so far.
+        let Ok(parsed) = parser.parse(&buffer) else { break 'input };
         // Wait for more input when the parser needs it, or when the body has ended and the input is consumed.
         let waiting = parsed.event == ContentEvent::Incomplete
             || (parsed.event == ContentEvent::End && parsed.consumed == buffer.len());
@@ -108,7 +109,7 @@ for chunk in chunks {
 }
 // The input has ended: give the parser what remains until it reports the end.
 loop {
-    let parsed = parser.parse_end(&buffer)?;
+    let Ok(parsed) = parser.parse_end(&buffer) else { break };
     let ended = parsed.event == ContentEvent::End;
     let consumed = parsed.consumed;
     buffer.drain(..consumed);
@@ -149,7 +150,7 @@ let mut files: Vec<Vec<u8>> = Vec::new();
 let mut parser = ContentParser::<Avatar, usize>::new(Some(&media_type))?;
 let mut input = &body[..];
 loop {
-    let parsed = parser.parse_end(input)?;
+    let Ok(parsed) = parser.parse_end(input) else { break };
     input = &input[parsed.consumed..];
     match parsed.event {
         ContentEvent::Upload(head) => {
@@ -172,7 +173,7 @@ An upload is reported only when its name is declared, its part has a `filename`,
 
 A browser submits a file input with no file chosen as a part with an empty `filename` and no content. Such a part chooses no file: `accept` does not apply to it, no upload is reported, an `Option<Upload<H>>` is `None`, a `Vec<Upload<H>>` gains no element, and a required upload is reported as `required`. In an array of groups, it still ends an element, as any field does, so that a file chosen in the next row stays with that row. A part with an empty `filename` that has content is refused with `ContentErrorKind::EmptyFilenameContent`.
 
-Uploads are stored before the whole body has been validated. When parsing fails, `Rejected::handles` holds every handle you gave the parser, so that you can remove what you stored, and an upload whose content was still arriving has no handle, so remove what you stored of it too; when a later upload for the same field replaces one, the earlier handle is returned in `Accepted::discarded`. Saving uploads safely, such as with an exclusive create and restrictive permissions, belongs to your server.
+Uploads are stored before the whole body has been validated. Always finish the parser, however parsing ends: after a fatal error from `parse` or `parse_end`, which `finish` reports again, and when the input stops early, such as when the client disconnects, which `finish` refuses as `UnexpectedEnd`. Returning early with `?` on `parse` drops the parser, and with it the handles. When parsing fails, `Rejected::handles` holds every handle you gave the parser, so that you can remove what you stored, and an upload whose content was still arriving has no handle, so remove what you stored of it too; when a later upload for the same field replaces one, the earlier handle is returned in `Accepted::discarded`. Saving uploads safely, such as with an exclusive create and restrictive permissions, belongs to your server.
 
 ## Errors and violations
 
@@ -197,7 +198,7 @@ let body = b"--XyZ\r\nContent-Disposition: form-data; name=\"items[]\"\r\n\r\n12
 let mut parser = ContentParser::<Order>::new(Some(&media_type))?;
 let mut input = &body[..];
 loop {
-    let parsed = parser.parse_end(input)?;
+    let Ok(parsed) = parser.parse_end(input) else { break };
     input = &input[parsed.consumed..];
     if parsed.event == ContentEvent::End {
         break;
@@ -236,7 +237,7 @@ let media_type = MediaType::parse("application/x-www-form-urlencoded")?;
 let mut parser = ContentParser::<Search>::new(Some(&media_type))?;
 let mut input = &b"q=caf%C3%A9+au+lait&tags[]=drinks&tags%5B%5D=french&page=2"[..];
 loop {
-    let parsed = parser.parse_end(input)?;
+    let Ok(parsed) = parser.parse_end(input) else { break };
     input = &input[parsed.consumed..];
     if parsed.event == ContentEvent::End {
         break;

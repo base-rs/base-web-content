@@ -23,7 +23,7 @@ use url_encoded_body::UrlEncodedBody;
 ///
 /// The caller owns the buffer, as with `base-web-multipart`'s `MultipartParser`. Each call to [`Self::parse`] reports how many bytes it consumed and what they held: the caller drops the consumed bytes, appends whatever arrives next, and calls again with what remains. When the input ends, the caller gives what remains to [`Self::parse_end`] until it reports [`ContentEvent::End`]; then [`Self::finish`] returns the struct, or why it was refused. The result, events, violations, and errors are the same however the body is split, except that an upload's content may arrive in different pieces.
 ///
-/// Fields other than uploads are buffered within their limits. An accepted upload's content is reported to the caller, borrowed from the input, to store wherever it chooses; when the upload ends, the caller gives the parser a handle of type `H` for it, which the result holds in its [`Upload`](crate::Upload). Uploads are stored before the whole body has been validated, so when parsing fails, [`Rejected`] returns every handle the caller gave, for the caller to remove what it stored. An upload whose content was still arriving when parsing failed has no handle, and the caller must remove what it stored of it.
+/// Fields other than uploads are buffered within their limits. An accepted upload's content is reported to the caller, borrowed from the input, to store wherever it chooses; when the upload ends, the caller gives the parser a handle of type `H` for it, which the result holds in its [`Upload`](crate::Upload). Uploads are stored before the whole body has been validated, so when parsing fails, [`Rejected`] returns every handle the caller gave, for the caller to remove what it stored. An upload whose content was still arriving when parsing failed has no handle, and the caller must remove what it stored of it. The handles are only returned by [`Self::finish`], so the caller must finish the parser however parsing ends: after a fatal error from [`Self::parse`] or [`Self::parse_end`], which [`Self::finish`] reports again, and when the input stops early, such as when the client disconnects or the request is cancelled, which it refuses as [`ContentErrorKind::UnexpectedEnd`]. Dropping the parser drops the handles it holds.
 ///
 /// ```
 /// use base_web_content::{Content, ContentEvent, ContentParser, Upload};
@@ -44,7 +44,8 @@ use url_encoded_body::UrlEncodedBody;
 /// // The whole body is in memory, so its end is known.
 /// let mut input = &body[..];
 /// loop {
-///     let parsed = parser.parse_end(input)?;
+///     // After a fatal error, `finish` reports it, with every handle given so far, for the caller to remove what it stored.
+///     let Ok(parsed) = parser.parse_end(input) else { break };
 ///     input = &input[parsed.consumed..];
 ///     match parsed.event {
 ///         // Begin storing an upload, such as in a temporary file.
@@ -138,6 +139,7 @@ impl<T: ContentHandles<H>, H> ContentParser<T, H> {
 
 impl<T, H> ContentParser<T, H> {
     /// The parser, reading part names and filenames under these rules rather than those of the media type. URL-encoded content has no parameters, so its parser is unchanged.
+    // SECURITY: Under `ParameterRules::Mime`, an extended `name*` or `filename*` takes the place of `name` or `filename`, as RFC 2231 says, so a reader that ignores extended parameters can see another field name or filename for the same part. This is accepted because the rules are an explicit opt-in, for clients known to send RFC 2231 parameters, while the default for `multipart/form-data`, `ParameterRules::FormData`, refuses every extended parameter, as RFC 7578 requires.
     pub fn with_parameter_rules(mut self, rules: ParameterRules) -> Self {
         match &mut self.format {
             Format::MultipartFormData(body) => body.set_parameter_rules(rules),
@@ -258,11 +260,12 @@ impl<T, H> ContentParser<T, H> {
         self.form.store(handle);
     }
 
-    /// Finish once the input has ended and [`Self::parse_end`] has reported [`ContentEvent::End`]: the declared struct, or why it was refused, with every handle the caller gave.
+    /// Finish once the input has ended and [`Self::parse_end`] has reported [`ContentEvent::End`]: the declared struct, or why it was refused, with every handle the caller gave. Call it however parsing ended, after a fatal error or when the input stopped early too, since only it returns the handles.
     ///
     /// # Errors
     ///
     /// [`Rejected`], with a fatal [`ContentError`] when parsing failed or the body ended early, or every [`Violation`](crate::Violation) when it parsed but some fields cannot be accepted.
+    // SECURITY: An upload whose content was still arriving when parsing failed, or that ended without the caller giving its handle, has no handle in `Rejected`. This does not leak storage: the caller began storing it at `ContentEvent::Upload` and still holds that storage, since it never gave the parser a handle for it, and the documentation above and the guide tell it to remove what it stored of an upload still arriving.
     pub fn finish(self) -> Result<Accepted<T, H>, Rejected<H>>
     where
         T: ContentHandles<H>,

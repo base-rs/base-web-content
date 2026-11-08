@@ -492,6 +492,7 @@ fn accepts(accept: &[&'static str], media_type: Option<&MediaType>) -> bool {
     let Some(media_type) = media_type else {
         return false;
     };
+    // SECURITY: `MediaRange::from_static` panics on a range that is not lowercase tokens, which would let any upload for the field panic the parser. It cannot here: the derive reads each range with `MediaRange::parse` from `base-web-media-type` 0.1, which Cargo resolves to the same version for both crates, and declares its lowercase essence, without parameters, which `from_static` accepts. Declarations are trusted application code, written by the derive, as design/scope.md requires; one written by hand through the hidden `__private` module is outside that boundary.
     let accept: MediaRangeSet = accept
         .iter()
         .map(|range| MediaRange::from_static(range))
