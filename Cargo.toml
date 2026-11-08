@@ -1,0 +1,21 @@
+[package]
+name = "base-web-content"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.87"
+license = "MIT"
+description = "Declarative, limited parsing of web request content, such as forms, without I/O"
+repository = "https://github.com/base-rs/base-web-content"
+readme = "readme.md"
+keywords = ["form-data", "multipart", "urlencoded", "upload", "web"]
+categories = ["web-programming", "parser-implementations"]
+include = ["src/**", "context/**", "Cargo.toml", "readme.md", "license.md", "releases.md"]
+
+[workspace]
+members = ["bake"]
+resolver = "3"
+
+[workspace.metadata.bake.release]
+reviewers = ["base-rs/maintainers"]
+
+[dependencies]
