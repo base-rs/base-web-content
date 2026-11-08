@@ -188,6 +188,43 @@ fn header_size_limit() {
     );
 }
 
+/// Transport padding after a boundary counts toward the header section limit, and padding over it is refused at the padding's start, however the body is split.
+#[test]
+fn padding_after_a_boundary() {
+    for dashes in ["", "--"] {
+        let padded = |length: usize| {
+            let mut body = field("a", "1");
+            body.extend_from_slice(
+                format!("--{BOUNDARY}{dashes}{}\r\n", " ".repeat(length)).as_bytes(),
+            );
+            if dashes.is_empty() {
+                body.extend_from_slice(
+                    b"Content-Disposition: form-data; name=\"b\"\r\n\r\n2\r\n--XyZ--\r\n",
+                );
+            }
+            body
+        };
+        // The padding and the header section after it are at most 64 bytes.
+        let within = if dashes.is_empty() { 64 - 42 } else { 64 };
+        assert_eq!(
+            accepted(&padded(within)).a.as_deref(),
+            Some("1"),
+            "`--XyZ{dashes}` with {within} bytes of padding"
+        );
+        let body = padded(65);
+        let start = field("a", "1").len() + 2 + BOUNDARY.len() + dashes.len();
+        refused(&body, ContentErrorKind::HeaderSizeLimit, start, start + 64);
+    }
+    let epilogue = [field("a", "1"), b"--XyZ-- \r\neeeee".to_vec()].concat();
+    let closing = epilogue.len() - 5;
+    refused(
+        &epilogue,
+        ContentErrorKind::EpilogueSizeLimit,
+        closing + 4,
+        closing + 4,
+    );
+}
+
 #[test]
 fn header_count_limit() {
     let fields = |count: usize| {
@@ -337,6 +374,27 @@ fn reads_the_content_before_a_bare_line_break() {
     refused_with(&long_preamble, ContentErrorKind::PreambleSizeLimit, 8);
     let after_boundary = b"--XyZ\n--XyZ--\r\n";
     refused_with(after_boundary, ContentErrorKind::MalformedMultipart, 5);
+    let after_header = body(&[file("file", "f", None, b"\n--XyZ")]);
+    let seen = refused_with(
+        &after_header,
+        ContentErrorKind::MalformedMultipart,
+        find(&after_header, b"\n--XyZ"),
+    );
+    assert_eq!(seen.len(), 1, "the upload begins, with no content");
+    let over_content = body(&[
+        field("a", "123456"),
+        file("file", "f", None, b"abcde\n--XyZ"),
+    ]);
+    let seen = refused_with(
+        &over_content,
+        ContentErrorKind::ContentSizeLimit,
+        find(&over_content, b"e\n--XyZ"),
+    );
+    assert_eq!(
+        seen[1..],
+        [Seen::Content(b"abcd".to_vec())],
+        "the content within the total content limit is reported"
+    );
 }
 
 #[test]
@@ -381,6 +439,9 @@ fn a_line_break_before_a_bare_break_in_the_preamble_counts() {
             8,
         ),
         (b"pppppp\r\n\n", ContentErrorKind::MalformedMultipart, 8),
+        (b"pppppppp\n", ContentErrorKind::MalformedMultipart, 8),
+        (b"pppppppp\r", ContentErrorKind::MalformedMultipart, 8),
+        (b"ppppppppp\n", ContentErrorKind::PreambleSizeLimit, 8),
         (b"ppppppp\r", ContentErrorKind::MalformedMultipart, 7),
     ] {
         let body = [preamble.to_vec(), body(&[field("a", "1")])].concat();

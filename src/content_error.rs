@@ -141,7 +141,7 @@ impl ContentError {
         self.kind
     }
 
-    /// The offset in the body, in bytes, where the parser found the problem: 0 for a problem with the media type; the start of a part's header section for a problem with the section, its size, its fields, or the part's name, which are decided when the section is complete; the start of a URL-encoded name for a problem with the name, or the first byte beyond the longest it could be; and otherwise the first byte beyond a limit, or the first byte that is malformed.
+    /// The offset in the body, in bytes, where the parser found the problem: 0 for a problem with the media type; the start of a part's header section for a problem with the section, its size, its fields, or the part's name, which are decided when the section is complete; the start of the spaces and tabs after a boundary when they alone exceed the header section limit; the start of a URL-encoded name for a problem with the name, or the first byte beyond the longest it could be; and otherwise the first byte beyond a limit, or the first byte that is malformed.
     pub fn offset(&self) -> u64 {
         self.offset
     }

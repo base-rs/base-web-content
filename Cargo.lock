@@ -221,9 +221,9 @@ checksum = "8de5ee13308e03ad6a7e7e435f73071ac7e65b64f1aa045149827de067909683"
 
 [[package]]
 name = "base-web-multipart"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fb74b056f9dca31c4fdfe82cd773710bee0baba90a3f7936e38781dcad7ce51"
+checksum = "f37a83f03b002646ac0d87c9b4c4f5f93d0f92b9d6700c004293b331f87e8ae9"
 dependencies = [
  "base-message",
  "base-web-media-type",
