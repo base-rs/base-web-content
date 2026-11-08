@@ -633,3 +633,13 @@ fn a_parser_can_be_held_across_threads() {
     assert_send_sync::<base_web_content::Accepted<Signup, Handle>>();
     assert_send_sync::<base_web_content::Rejected<Handle>>();
 }
+
+#[test]
+fn a_filename_is_given_as_it_was_sent_with_any_character() {
+    let filename = "invoice\t\u{202e}fdp.exe";
+    let run = split_invariant::<Signup>(&body(&[
+        field("name", "Ada"),
+        file("documents[]", filename, None, b"x"),
+    ]));
+    assert_eq!(run.seen[0], upload("documents[0]", filename, None));
+}

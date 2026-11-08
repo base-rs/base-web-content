@@ -51,6 +51,7 @@ impl fmt::Display for FieldValueError {
 
 impl std::error::Error for FieldValueError {}
 
+// SECURITY: Text may contain any character UTF-8 allows, including NUL, CR, LF, and bidirectional controls, sent raw in multipart content or escaped in URL-encoded content. This is not an injection weakness here: the parser interprets none of it, and an application that writes a value into another syntax, such as a header, a log line, or a path, must encode or check it for that syntax.
 /// Any text, unchanged.
 impl FieldValue for String {
     fn from_field_text(text: &str) -> Result<Self, FieldValueError> {
