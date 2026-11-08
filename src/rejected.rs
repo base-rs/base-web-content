@@ -24,9 +24,8 @@ impl<H> fmt::Debug for Rejected<H> {
     }
 }
 
-/// Why content was refused.
+/// Why content was refused: the two kinds of failure `design/errors.md` defines. It is exhaustive, so that an application can match it without a wildcard; adding a kind is a breaking change.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum Rejection {
     /// Parsing stopped with a fatal error.
     Error(ContentError),

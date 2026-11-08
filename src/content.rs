@@ -1,7 +1,8 @@
 // Released under the MIT License.
 // Copyright, 2026, by Samuel Williams.
 
-use crate::{__private::Declaration, ContentFormat};
+use crate::__private::{Declaration, Item};
+use crate::ContentFormat;
 
 /// Content an application declares that it accepts, with limits on everything in it. Derive it with `#[derive(Content)]` on a struct with named fields; it must not be implemented by hand, since what the derive implements is not public API.
 ///
@@ -39,7 +40,7 @@ use crate::{__private::Declaration, ContentFormat};
 /// | `pair_count_limit = N`, the pairs of a URL-encoded body | The struct | 1,024 |
 /// | `url_encoded_size_limit = N` | The struct | 2 MiB |
 ///
-/// A struct's limits apply when it is the top level of a body, not when it is nested in another. Every upload in a declaration, nested groups included, must have the same handle type `H`.
+/// A struct's limits apply when it is the top level of a body, not when it is nested in another. Every upload in a declaration, nested groups included, must have the same handle type `H`, which [`ContentHandles`] names.
 ///
 /// ```
 /// use base_web_content::{Content, ContentFormat, FieldValue, Upload};
@@ -77,8 +78,22 @@ use crate::{__private::Declaration, ContentFormat};
 pub trait Content: Declaration {
     /// The largest body in `format` the declaration could need, computed from its fields and limits, or `None` when it does not accept the format.
     ///
-    /// A server can refuse a request whose `Content-Length` exceeds it with 413 Content Too Large before reading the body.
+    /// A server can refuse a request whose `Content-Length` exceeds it with 413 Content Too Large before reading the body. The parser enforces it too, as a running total, whatever the request declared.
     fn body_size_limit(format: ContentFormat) -> Option<usize> {
         Self::DECLARATION.body_size_limit(format)
     }
 }
+
+/// A declaration whose uploads hold handles of type `H`: any declaration without uploads, for every `H`, and one whose uploads are `Upload<H>`. It is implemented for every such declaration, so that generic code can name what [`ContentParser`](crate::ContentParser) parses.
+///
+/// ```
+/// use base_web_content::{ContentError, ContentHandles, ContentParser};
+/// use base_web_media_type::MediaType;
+///
+/// fn parser_for<T: ContentHandles<std::path::PathBuf>>(media_type: &MediaType) -> Result<ContentParser<T, std::path::PathBuf>, ContentError> {
+///     ContentParser::new(Some(media_type))
+/// }
+/// ```
+pub trait ContentHandles<H>: Content + Item<H> {}
+
+impl<T: Content + Item<H>, H> ContentHandles<H> for T {}

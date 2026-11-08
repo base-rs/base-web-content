@@ -383,7 +383,12 @@ fn limits_the_depth_of_names() {
         ContentErrorKind::UnknownName,
         "an unfinished component is not counted"
     );
-    for name in ["a[b][c][d]", "a[b][c][d][e]", "a[b][c][d]x", "a[][][]"] {
+    assert_eq!(
+        error::<Shallow>(vec![value("a[b][c][d]x", "")]).0,
+        ContentErrorKind::UnknownName,
+        "a malformed name is refused as one, however deep, as `base-web-url` reads it"
+    );
+    for name in ["a[b][c][d]", "a[b][c][d][e]", "a[][][]"] {
         assert_eq!(
             error::<Shallow>(vec![value(name, "")]).0,
             ContentErrorKind::DepthLimit,
@@ -603,6 +608,20 @@ fn errors_map_to_one_status_each() {
         (ContentErrorKind::FieldSizeLimit, 413),
         (ContentErrorKind::ContentSizeLimit, 413),
         (ContentErrorKind::UnknownName, 400),
+        (ContentErrorKind::BodySizeLimit, 413),
+        (ContentErrorKind::PreambleSizeLimit, 413),
+        (ContentErrorKind::EpilogueSizeLimit, 413),
+        (ContentErrorKind::HeaderSizeLimit, 413),
+        (ContentErrorKind::HeaderCountLimit, 413),
+        (ContentErrorKind::PartCountLimit, 413),
+        (ContentErrorKind::InvalidBoundary, 400),
+        (ContentErrorKind::MissingName, 400),
+        (ContentErrorKind::InvalidPartHeader, 400),
+        (ContentErrorKind::UnsupportedCharset, 415),
+        (ContentErrorKind::PairCountLimit, 413),
+        (ContentErrorKind::UnexpectedEnd, 400),
+        (ContentErrorKind::MalformedMultipart, 400),
+        (ContentErrorKind::MalformedUrlEncoded, 400),
     ] {
         let error = crate::ContentError::new(kind, 42);
         assert_eq!(

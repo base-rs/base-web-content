@@ -170,13 +170,6 @@ pub enum Charset {
 
 impl Charset {
     /// The character set named by a `charset` parameter, if there is one.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the multipart parser, which reads a part's character set, comes in the next change"
-        )
-    )]
     pub(crate) fn from_parameter(charset: Option<&str>) -> Self {
         match charset {
             None => Self::Unspecified,
